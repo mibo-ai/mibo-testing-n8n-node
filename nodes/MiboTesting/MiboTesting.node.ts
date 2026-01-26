@@ -248,7 +248,11 @@ export class MiboTesting implements INodeType {
 			tracePayload.externalId = externalId;
 		}
 
-		const serverUrl = (options.serverUrl as string) || (credentials.serverUrl as string) || 'https://api.mibo-ai.com';
+		let serverUrl = (options.serverUrl as string || credentials.serverUrl as string || 'https://api.mibo-ai.com').trim();
+		if (serverUrl.endsWith('/')) {
+			serverUrl = serverUrl.slice(0, -1);
+		}
+
 		const timeout = ((options.timeout as number) || 30) * 1000;
 		const requestHeaders: IDataObject = {
 			'x-api-key': credentials.apiKey as string,
@@ -268,6 +272,7 @@ export class MiboTesting implements INodeType {
 				url: `${serverUrl}/traces`,
 				headers: requestHeaders,
 				body: tracePayload,
+				json: true,
 				timeout,
 			});
 
@@ -285,7 +290,7 @@ export class MiboTesting implements INodeType {
 					pairedItem: { item: i },
 				});
 			}
-		} catch (error) {
+		} catch (error: unknown) {
 			if (this.continueOnFail()) {
 				for (let i = 0; i < items.length; i++) {
 					returnData.push({
