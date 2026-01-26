@@ -15,11 +15,12 @@ RUN npm prune --production
 # --- Stage 2: Runner ---
 FROM n8nio/n8n:latest
 USER root
-COPY --from=builder /build /opt/n8n-nodes-mibo-testing
-WORKDIR /usr/local/lib/node_modules/n8n
-RUN npm install /opt/n8n-nodes-mibo-testing
-WORKDIR /home/node
 
+ARG NODE_PATH=/usr/local/lib/node_modules/n8n-nodes-mibo-testing
+RUN mkdir -p ${NODE_PATH}
+COPY --from=builder /build ${NODE_PATH}
+WORKDIR ${NODE_PATH}
+RUN npm link
 ENV N8N_LISTEN_ADDRESS=0.0.0.0
 ENV N8N_PROTOCOL=https
 ENV N8N_USER_FOLDER=/home/node/.n8n
