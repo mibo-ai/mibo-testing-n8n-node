@@ -8,31 +8,241 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
-/**
- * Recursively scrubs PII keys from a single JSON object
- */
-function scrubPIIObject(data: IDataObject, keys: string[]): IDataObject {
-	if (!data || typeof data !== 'object') return data;
+const DEFAULT_SERVER_URL = 'https://api.mibo-ai.com';
+const DEFAULT_TIMEOUT_SECONDS = 30;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_EXTERNAL_ID_LENGTH = 255;
 
-	const scrubbed: IDataObject = {};
-	for (const key of Object.keys(data)) {
-		if (keys.includes(key)) {
-			scrubbed[key] = '[REDACTED]';
-		} else if (typeof data[key] === 'object' && data[key] !== null) {
-			scrubbed[key] = scrubPIIObject(data[key] as IDataObject, keys);
-		} else {
-			scrubbed[key] = data[key];
-		}
-	}
+const ERROR_CODES = {
+	MISSING_API_KEY: 'Missing x-api-key header. Make sure you are sending the API key in the headers.',
+	INVALID_API_KEY: 'The API key does not exist or has been revoked. Verify that you are using a valid API key.',
+	VALIDATION_ERROR: 'The request body failed validation.',
+	PLATFORM_NOT_FOUND: {
+		withRestrictions: 'The API key is restricted to specific platforms. Verify that the platformId matches one of the allowed platforms.',
+		withoutRestrictions: 'Could not determine the target platform. Send a platformId in the body, or restrict the API key to a single platform.',
+	},
+	AUTH_ERROR: 'Internal error while validating the API key. Contact support.',
+	INTERNAL_SERVER_ERROR: 'Unexpected server error. Contact support if it persists.',
+} as const;
 
-	return scrubbed;
+interface MiboErrorResponse {
+	success: false;
+	timestamp: string;
+	error: {
+		code: string;
+		message: string;
+		details?: Array<{
+			type: string;
+			msg: string;
+			path: string;
+			location: string;
+		}>;
+	};
+}
+
+interface MiboSuccessResponse {
+	traceId?: string;
+	id?: string;
+}
+
+interface TracePayload {
+	data: {
+		input: IDataObject[];
+	};
+	externalMetadata: {
+		workflowId: string;
+	};
+	metadata: IDataObject;
+	platformId?: string;
+	externalId?: string;
+}
+
+interface NodeOptions {
+	serverUrl?: string;
+	timeout?: number;
+}
+
+interface MetadataFields {
+	environment?: string;
+	version?: string;
+	additionalFields?: string | IDataObject;
 }
 
 /**
- * Scrubs PII keys from an array of JSON objects
+ * Validates if a string is a valid UUID v1-5
  */
-function scrubPII(data: IDataObject[], keys: string[]): IDataObject[] {
-	return data.map(item => scrubPIIObject(item, keys));
+function isValidUUID(value: string): boolean {
+	return UUID_REGEX.test(value);
+}
+
+/**
+ * Normalizes the server URL by removing trailing slashes
+ */
+function normalizeServerUrl(url: string): string {
+	return url.trim().replace(/\/+$/, '');
+}
+
+/**
+ * Extracts the request ID from incoming data headers
+ */
+function extractRequestId(firstItem: IDataObject | undefined): string | undefined {
+	if (!firstItem) {
+		return undefined;
+	}
+
+	const headers = firstItem.headers as IDataObject | undefined;
+	return (
+		headers?.['x-request-id']
+	) as string | undefined;
+}
+
+/**
+ * Parses error response from Mibo Testing API and returns a descriptive message
+ */
+function parseErrorResponse(error: unknown): string {
+	const err = error as { response?: { data?: MiboErrorResponse }; message?: string };
+	const errorData = err.response?.data;
+
+	if (errorData?.error?.code) {
+		const code = errorData.error.code;
+		let baseMessage: string;
+		// Handle PLATFORM_NOT_FOUND special case with dynamic messages
+		if (code === 'PLATFORM_NOT_FOUND') {
+			const serverMessage = errorData.error.message || '';
+			const hasRestrictions = serverMessage.toLowerCase().includes('restricted') ||
+				serverMessage.toLowerCase().includes('allowed');
+			baseMessage = hasRestrictions
+				? ERROR_CODES.PLATFORM_NOT_FOUND.withRestrictions
+				: ERROR_CODES.PLATFORM_NOT_FOUND.withoutRestrictions;
+		} else {
+			const errorCode = ERROR_CODES[code as keyof typeof ERROR_CODES];
+			baseMessage = (typeof errorCode === 'string' ? errorCode : null) || errorData.error.message;
+		}
+
+		if (errorData.error.details?.length) {
+			const details = errorData.error.details
+				.map(d => `${d.path}: ${d.msg}`)
+				.join('; ');
+			return `${baseMessage} Details: ${details}`;
+		}
+
+		return baseMessage;
+	}
+
+	return err.message || 'Unknown error while sending the trace';
+}
+
+/**
+ * Builds the metadata object for the trace
+ */
+function buildMetadata(
+	workflowId: string,
+	workflowName: string,
+	timestamp: string,
+	includeMetadata: boolean,
+	metadataConfig: IDataObject,
+	node: IExecuteFunctions,
+): IDataObject {
+	const metadata: IDataObject = {
+		workflowId,
+		workflowName,
+		timestamp,
+	};
+
+	if (!includeMetadata) {
+		return metadata;
+	}
+
+	const fields = metadataConfig.fields as MetadataFields | undefined;
+	if (!fields) {
+		return metadata;
+	}
+
+	if (fields.environment) {
+		metadata.environment = fields.environment;
+	}
+
+	if (fields.version) {
+		metadata.version = fields.version;
+	}
+
+	if (fields.additionalFields) {
+		try {
+			const additionalFields = typeof fields.additionalFields === 'string'
+				? JSON.parse(fields.additionalFields)
+				: fields.additionalFields;
+			Object.assign(metadata, additionalFields);
+		} catch {
+			throw new NodeOperationError(
+				node.getNode(),
+				'Invalid JSON in Additional Fields',
+				{ description: 'Please ensure the Additional Fields contains valid JSON' }
+			);
+		}
+	}
+
+	return metadata;
+}
+
+/**
+ * Builds the trace payload to send to Mibo Testing
+ */
+function buildTracePayload(
+	inputData: IDataObject[],
+	workflowId: string,
+	metadata: IDataObject,
+	platformId: string,
+	externalId: string,
+): TracePayload {
+	const payload: TracePayload = {
+		data: {
+			input: inputData,
+		},
+		externalMetadata: {
+			workflowId,
+		},
+		metadata,
+	};
+
+	if (platformId) {
+		payload.platformId = platformId;
+	}
+
+	if (externalId) {
+		payload.externalId = externalId;
+	}
+
+	return payload;
+}
+
+/**
+ * Sends the trace to Mibo Testing API
+ */
+async function sendTrace(
+	node: IExecuteFunctions,
+	serverUrl: string,
+	apiKey: string,
+	payload: TracePayload,
+	timeout: number,
+	requestId?: string,
+): Promise<MiboSuccessResponse> {
+	const headers: IDataObject = {
+		'x-api-key': apiKey,
+		'Content-Type': 'application/json',
+	};
+
+	if (requestId) {
+		headers['x-request-id'] = requestId;
+	}
+
+	return node.helpers.httpRequest({
+		method: 'POST' as IHttpRequestMethods,
+		url: `${serverUrl}/traces`,
+		headers,
+		body: payload,
+		json: true,
+		timeout,
+	});
 }
 
 export class MiboTesting implements INodeType {
@@ -70,27 +280,6 @@ export class MiboTesting implements INodeType {
 				default: '',
 				description: 'Your custom trace identifier (max 255 characters)',
 				placeholder: 'e.g., trace-123',
-			},
-			{
-				displayName: 'Clean PII',
-				name: 'cleanPii',
-				type: 'boolean',
-				default: false,
-				description: 'Whether to scrub PII (Personally Identifiable Information) locally before sending',
-				hint: 'Mibo Testing also scrubs data on its servers before storage, but enabling this adds a layer of local protection.',
-			},
-			{
-				displayName: 'PII Keys to Scrub',
-				name: 'piiKeys',
-				type: 'string',
-				default: 'email, password, phone, address',
-				displayOptions: {
-					show: {
-						cleanPii: [true],
-					},
-				},
-				description: 'Comma-separated list of keys to redact from the data',
-				placeholder: 'e.g., email, password, credit_card',
 			},
 			{
 				displayName: 'Include Metadata',
@@ -162,7 +351,7 @@ export class MiboTesting implements INodeType {
 						displayName: 'Timeout (Seconds)',
 						name: 'timeout',
 						type: 'number',
-						default: 30,
+						default: DEFAULT_TIMEOUT_SECONDS,
 						description: 'Maximum time to wait for the server response',
 					},
 				],
@@ -173,108 +362,71 @@ export class MiboTesting implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
+
 		const credentials = await this.getCredentials('miboTestingApi');
 		const platformId = this.getNodeParameter('platformId', 0, '') as string;
 		const externalId = this.getNodeParameter('externalId', 0, '') as string;
-		const cleanPii = this.getNodeParameter('cleanPii', 0, false) as boolean;
 		const includeMetadata = this.getNodeParameter('includeMetadata', 0, false) as boolean;
-		const options = this.getNodeParameter('options', 0, {}) as IDataObject;
-		let piiKeys: string[] = [];
-		if (cleanPii) {
-			const keysString = this.getNodeParameter('piiKeys', 0, '') as string;
-			piiKeys = keysString.split(',').map(k => k.trim()).filter(k => k.length > 0);
+		const options = this.getNodeParameter('options', 0, {}) as NodeOptions;
+		if (platformId && !isValidUUID(platformId)) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'Platform ID must be a valid UUID',
+				{
+					description: 'The Platform ID must be in UUID format (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+				}
+			);
+		}
+
+		if (externalId && externalId.length > MAX_EXTERNAL_ID_LENGTH) {
+			throw new NodeOperationError(
+				this.getNode(),
+				`External ID must not exceed ${MAX_EXTERNAL_ID_LENGTH} characters`,
+				{
+					description: `The External ID is ${externalId.length} characters long. Maximum allowed is ${MAX_EXTERNAL_ID_LENGTH}.`,
+				}
+			);
 		}
 
 		const workflowData = this.getWorkflow();
-		const now = new Date().toISOString();
-		let inputData: IDataObject[] = items.map(item => item.json as IDataObject);
-		if (cleanPii && piiKeys.length > 0) {
-			inputData = scrubPII(inputData, piiKeys);
-		}
+		const workflowId = workflowData.id || 'unknown';
+		const workflowName = workflowData.name || 'Unnamed Workflow';
+		const timestamp = new Date().toISOString();
+		const inputData: IDataObject[] = items.map(item => item.json as IDataObject);
+		const metadataConfig = includeMetadata
+			? this.getNodeParameter('metadata', 0, {}) as IDataObject
+			: {};
+		const metadata = buildMetadata(
+			workflowId,
+			workflowName,
+			timestamp,
+			includeMetadata,
+			metadataConfig,
+			this,
+		);
 
-		const metadata: IDataObject = {
-			workflowId: workflowData.id || 'unknown',
-			workflowName: workflowData.name || 'Unnamed Workflow',
-			timestamp: now,
-		};
-
-		if (includeMetadata) {
-			const metadataConfig = this.getNodeParameter('metadata', 0, {}) as IDataObject;
-			const fields = metadataConfig.fields as IDataObject | undefined;
-			
-			if (fields) {
-				if (fields.environment) {
-					metadata.environment = fields.environment;
-				}
-
-				if (fields.version) {
-					metadata.version = fields.version;
-				}
-
-				if (fields.additionalFields) {
-					try {
-						const additionalFields = typeof fields.additionalFields === 'string'
-							? JSON.parse(fields.additionalFields)
-							: fields.additionalFields;
-						Object.assign(metadata, additionalFields);
-					} catch {
-						throw new NodeOperationError(
-							this.getNode(),
-							'Invalid JSON in Additional Fields',
-							{ description: 'Please ensure the Additional Fields contains valid JSON' }
-						);
-					}
-				}
-			}
-		}
-
-		const tracePayload: IDataObject = {
-			data: {
-				input: inputData,
-				workflowId: workflowData.id || 'unknown',
-				workflowName: workflowData.name || 'Unnamed Workflow',
-			},
-			externalMetadata: {
-				workflowId: workflowData.id || 'unknown',
-			},
+		const tracePayload = buildTracePayload(
+			inputData,
+			workflowId,
 			metadata,
-		};
+			platformId,
+			externalId,
+		);
 
-		if (platformId) {
-			tracePayload.platformId = platformId;
-		}
-
-		if (externalId) {
-			tracePayload.externalId = externalId;
-		}
-
-		let serverUrl = (options.serverUrl as string || credentials.serverUrl as string || 'https://api.mibo-ai.com').trim();
-		if (serverUrl.endsWith('/')) {
-			serverUrl = serverUrl.slice(0, -1);
-		}
-
-		const timeout = ((options.timeout as number) || 30) * 1000;
-		const requestHeaders: IDataObject = {
-			'x-api-key': credentials.apiKey as string,
-			'Content-Type': 'application/json',
-		};
-
-		const firstItem = items[0]?.json as IDataObject;
-		const incomingHeaders = firstItem?.headers as IDataObject | undefined;
-		const requestId = (incomingHeaders?.['x-request-id'] || incomingHeaders?.['X-Request-Id'] || firstItem?.['x-request-id'] || firstItem?.['X-Request-Id']) as string | undefined;
-		if (requestId) {
-			requestHeaders['X-Request-Id'] = requestId;
-		}
-
+		const serverUrl = normalizeServerUrl(
+			options.serverUrl || credentials.serverUrl as string || DEFAULT_SERVER_URL
+		);
+		const timeout = (options.timeout || DEFAULT_TIMEOUT_SECONDS) * 1000;
+		const requestId = extractRequestId(items[0]?.json as IDataObject);
 		try {
-			const response = await this.helpers.httpRequest({
-				method: 'POST' as IHttpRequestMethods,
-				url: `${serverUrl}/traces`,
-				headers: requestHeaders,
-				body: tracePayload,
-				json: true,
+			const response = await sendTrace(
+				this,
+				serverUrl,
+				credentials.apiKey as string,
+				tracePayload,
 				timeout,
-			});
+				requestId,
+			);
 
 			for (let i = 0; i < items.length; i++) {
 				returnData.push({
@@ -284,13 +436,15 @@ export class MiboTesting implements INodeType {
 							sent: true,
 							traceId: response?.traceId || response?.id || 'unknown',
 							platformId: platformId || 'resolved-from-metadata',
-							timestamp: now,
+							timestamp,
 						},
 					},
 					pairedItem: { item: i },
 				});
 			}
 		} catch (error: unknown) {
+			const errorMessage = parseErrorResponse(error);
+
 			if (this.continueOnFail()) {
 				for (let i = 0; i < items.length; i++) {
 					returnData.push({
@@ -298,9 +452,9 @@ export class MiboTesting implements INodeType {
 							...items[i].json,
 							_miboTrace: {
 								sent: false,
-								error: (error as Error).message,
+								error: errorMessage,
 								platformId: platformId || 'unknown',
-								timestamp: now,
+								timestamp,
 							},
 						},
 						pairedItem: { item: i },
@@ -309,7 +463,7 @@ export class MiboTesting implements INodeType {
 			} else {
 				throw new NodeOperationError(
 					this.getNode(),
-					`Failed to send trace to Mibo Testing: ${(error as Error).message}`,
+					`Failed to send trace to Mibo Testing: ${errorMessage}`,
 					{
 						description: 'Check your API key and server URL in the credentials',
 					}

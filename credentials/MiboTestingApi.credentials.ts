@@ -35,7 +35,7 @@ export class MiboTestingApi implements ICredentialType {
 		type: 'generic',
 		properties: {
 			headers: {
-				'X-API-Key': '={{$credentials?.apiKey}}',
+				'x-api-key': '={{$credentials?.apiKey}}',
 				'Content-Type': 'application/json',
 			},
 		},
