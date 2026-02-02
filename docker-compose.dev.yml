@@ -1,8 +1,6 @@
 services:
   n8n:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: n8nio/n8n:latest
     container_name: n8n-mibo-testing-dev
     restart: unless-stopped
     ports:
@@ -14,14 +12,14 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - WEBHOOK_URL=http://localhost:5678/
-      - N8N_CUSTOM_EXTENSIONS=/home/node/.n8n/custom/n8n-nodes-mibo-testing
+      - N8N_CUSTOM_EXTENSIONS=/home/node/custom-nodes/n8n-nodes-mibo-testing
       - GENERIC_TIMEZONE=America/Argentina/Buenos_Aires
       - TZ=America/Argentina/Buenos_Aires
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_LOG_LEVEL=debug
     volumes:
       - n8n_data:/home/node/.n8n
-      - ./dist:/home/node/.n8n/custom/n8n-nodes-mibo-testing/dist:ro
+      - .:/home/node/custom-nodes/n8n-nodes-mibo-testing:ro
 
 volumes:
   n8n_data:
