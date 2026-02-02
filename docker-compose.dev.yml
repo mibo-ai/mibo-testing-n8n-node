@@ -1,8 +1,8 @@
 services:
   n8n:
     image: n8nio/n8n:latest
-    container_name: n8n-mibo-testing-dev
-    restart: unless-stopped
+    container_name: n8n-mibo-dev
+    restart: "no"
     ports:
       - "5678:5678"
     extra_hosts:
@@ -12,15 +12,22 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - WEBHOOK_URL=http://localhost:5678/
-      - N8N_CUSTOM_EXTENSIONS=/home/node/custom-nodes/n8n-nodes-mibo-testing
       - GENERIC_TIMEZONE=America/Argentina/Buenos_Aires
       - TZ=America/Argentina/Buenos_Aires
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_LOG_LEVEL=debug
+      - N8N_CUSTOM_EXTENSIONS=/home/node/custom-nodes/n8n-nodes-mibo-testing
     volumes:
-      - n8n_data:/home/node/.n8n
-      - .:/home/node/custom-nodes/n8n-nodes-mibo-testing:ro
+      - ./dist:/home/node/custom-nodes/n8n-nodes-mibo-testing/dist:ro
+      - ./package.json:/home/node/custom-nodes/n8n-nodes-mibo-testing/package.json:ro
+      - n8n_dev_data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
-  n8n_data:
+  n8n_dev_data:
     driver: local

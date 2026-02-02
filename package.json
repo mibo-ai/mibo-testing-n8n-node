@@ -26,11 +26,17 @@
   "scripts": {
     "build": "tsc && npm run copy:icons",
     "copy:icons": "node scripts/copy-icons.mjs",
-    "dev": "tsc --watch",
+    "watch": "tsc --watch",
     "lint": "eslint nodes credentials",
     "lint:fix": "eslint nodes credentials --fix",
     "prepublishOnly": "npm run build",
-    "start:dev": "./scripts/dev.sh"
+    "------- DEV -------": "echo 'Development commands'",
+    "dev": "node scripts/dev.mjs",
+    "dev:docker": "node scripts/dev-docker.mjs",
+    "dev:link": "npm run build && npm link",
+    "------- PROD -------": "echo 'Production commands'",
+    "docker:build": "docker build -t n8n-mibo-testing:latest .",
+    "docker:run": "docker compose up -d"
   },
   "files": [
     "dist"
@@ -47,8 +53,11 @@
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@types/node": "^22.0.0",
+    "chokidar": "^4.0.0",
     "eslint": "^9.0.0",
     "n8n-workflow": "*",
+    "pino": "^9.0.0",
+    "pino-pretty": "^13.0.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.0.0"
   },
