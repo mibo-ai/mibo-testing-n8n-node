@@ -1,6 +1,6 @@
 # n8n-nodes-mibo-testing
 
-This is an n8n community node for **Mibo Testing** - a platform for semantic and procedural testing of AI workflows.
+n8n community node for **Mibo Testing** - a platform for semantic and procedural testing of AI workflows.
 
 ## Features
 
@@ -89,12 +89,15 @@ The trace sent to Mibo Testing includes:
 }
 ```
 
+---
+
 ## Development
 
 ### Prerequisites
 
-- Node.js 20.0.0 or later
-- npm or pnpm
+- Node.js >= 20.0.0
+- npm
+- Docker (optional, for Docker-based development)
 
 ### Setup
 
@@ -104,31 +107,95 @@ cd n8n-nodes-mibo-testing
 npm install
 ```
 
-### Build
+### Development Options
+
+There are two ways to develop: **local** (faster iteration) or **Docker** (more isolated).
+
+#### Option 1: Local Development (Recommended)
+
+Requires n8n installed globally:
 
 ```bash
-npm run build
-```
+# 1. Install n8n globally (one time)
+npm install -g n8n
 
-### Development Mode
+# 2. Build and link the node
+npm run dev:link
 
-```bash
+# 3. Link to your n8n installation (one time)
+cd ~/.n8n && npm link n8n-nodes-mibo-testing
+
+# 4. Start development mode
 npm run dev
 ```
 
-### Lint
+This will:
+- Build the project
+- Watch for file changes in `nodes/` and `credentials/`
+- Automatically rebuild and restart n8n on changes
+
+Open http://localhost:5678 to access n8n.
+
+#### Option 2: Docker Development
+
+No global n8n installation needed:
 
 ```bash
-npm run lint
-npm run lint:fix
+npm run dev:docker
 ```
+
+This will:
+- Build the project
+- Start n8n in a Docker container
+- Watch for file changes and rebuild automatically
+- Mount `dist/` directly (reload workflow in n8n to see changes)
+
+Open http://localhost:5678 to access n8n.
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run build` | Build TypeScript to `dist/` |
+| `npm run dev` | Local development with hot reload |
+| `npm run dev:docker` | Docker development with hot reload |
+| `npm run dev:link` | Build and npm link for local n8n |
+| `npm run lint` | Run ESLint |
+| `npm run lint:fix` | Run ESLint with auto-fix |
+| `npm run docker:build` | Build production Docker image |
+
+### Makefile Shortcuts
+
+```bash
+make help        # Show all commands
+make dev         # Same as npm run dev
+make dev-docker  # Same as npm run dev:docker
+make build       # Same as npm run build
+make lint        # Same as npm run lint
+make clean       # Remove dist/ and node_modules/
+```
+
+### Project Structure
+
+```
+├── nodes/
+│   └── MiboTesting/
+│       ├── MiboTesting.node.ts    # Main node implementation
+│       └── mibo-testing.svg       # Node icon
+├── credentials/
+│   └── MiboTestingApi.credentials.ts
+├── scripts/
+│   ├── dev.mjs                    # Local dev script
+│   ├── dev-docker.mjs             # Docker dev script
+│   └── copy-icons.mjs             # Icon copy utility
+├── dist/                          # Compiled output (generated)
+├── docker-compose.dev.yml         # Docker development config
+├── Dockerfile                     # Production image (Railway)
+└── Makefile                       # Convenience commands
+```
+
+---
 
 ## License
 
 GNU GPL v3
-
-## Support
-
-- Documentation: [https://docs.mibo-testing.com/integrations/n8n](https://docs.mibo-testing.com/integrations/n8n)
-- Issues: [GitHub Issues](https://github.com/mibo-testing/n8n-nodes-mibo-testing/issues)
-- Contact: support@mibo-testing.com
