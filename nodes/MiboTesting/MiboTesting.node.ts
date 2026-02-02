@@ -41,13 +41,23 @@ interface MiboErrorResponse {
 }
 
 interface MiboSuccessResponse {
-	traceId?: string;
-	id?: string;
+	success: boolean;
+	data: {
+		id: string;
+		platformId: string;
+		externalId?: string;
+		status: string;
+		createdAt: string;
+		updatedAt: string;
+	};
+	message: string;
+	timestamp: string;
 }
 
 interface TracePayload {
 	data: {
 		input: IDataObject[];
+		nodes?: IDataObject[];
 	};
 	externalMetadata: {
 		workflowId: string;
@@ -68,37 +78,44 @@ interface MetadataFields {
 	additionalFields?: string | IDataObject;
 }
 
-/**
- * Validates if a string is a valid UUID v1-5
- */
 function isValidUUID(value: string): boolean {
 	return UUID_REGEX.test(value);
 }
 
-/**
- * Normalizes the server URL by removing trailing slashes
- */
 function normalizeServerUrl(url: string): string {
 	return url.trim().replace(/\/+$/, '');
 }
 
-/**
- * Extracts the request ID from incoming data headers
- */
-function extractRequestId(firstItem: IDataObject | undefined): string | undefined {
-	if (!firstItem) {
+function extractRequestIdFromHeaders(headers: IDataObject | undefined): string | undefined {
+	if (!headers) {
 		return undefined;
 	}
 
-	const headers = firstItem.headers as IDataObject | undefined;
-	return (
-		headers?.['x-request-id']
-	) as string | undefined;
+	const headerKey = Object.keys(headers).find(
+		key => key.toLowerCase() === 'x-request-id'
+	);
+
+	return headerKey ? (headers[headerKey] as string) : undefined;
 }
 
-/**
- * Parses error response from Mibo Testing API and returns a descriptive message
- */
+function findRequestIdInData(data: IDataObject): string | undefined {
+	if (data.headers) {
+		const requestId = extractRequestIdFromHeaders(data.headers as IDataObject);
+		if (requestId) return requestId;
+	}
+
+	for (const value of Object.values(data)) {
+		if (value && typeof value === 'object' && !Array.isArray(value)) {
+			const requestId = findRequestIdInData(value as IDataObject);
+			if (requestId) {
+				return requestId;
+			}
+		}
+	}
+
+	return undefined;
+}
+
 function parseErrorResponse(error: unknown): string {
 	const err = error as { response?: { data?: MiboErrorResponse }; message?: string };
 	const errorData = err.response?.data;
@@ -106,7 +123,6 @@ function parseErrorResponse(error: unknown): string {
 	if (errorData?.error?.code) {
 		const code = errorData.error.code;
 		let baseMessage: string;
-		// Handle PLATFORM_NOT_FOUND special case with dynamic messages
 		if (code === 'PLATFORM_NOT_FOUND') {
 			const serverMessage = errorData.error.message || '';
 			const hasRestrictions = serverMessage.toLowerCase().includes('restricted') ||
@@ -132,9 +148,6 @@ function parseErrorResponse(error: unknown): string {
 	return err.message || 'Unknown error while sending the trace';
 }
 
-/**
- * Builds the metadata object for the trace
- */
 function buildMetadata(
 	workflowId: string,
 	workflowName: string,
@@ -184,15 +197,13 @@ function buildMetadata(
 	return metadata;
 }
 
-/**
- * Builds the trace payload to send to Mibo Testing
- */
 function buildTracePayload(
 	inputData: IDataObject[],
 	workflowId: string,
 	metadata: IDataObject,
 	platformId: string,
 	externalId: string,
+	nodesData?: IDataObject[],
 ): TracePayload {
 	const payload: TracePayload = {
 		data: {
@@ -203,6 +214,10 @@ function buildTracePayload(
 		},
 		metadata,
 	};
+
+	if (nodesData && nodesData.length > 0) {
+		payload.data.nodes = nodesData;
+	}
 
 	if (platformId) {
 		payload.platformId = platformId;
@@ -215,9 +230,6 @@ function buildTracePayload(
 	return payload;
 }
 
-/**
- * Sends the trace to Mibo Testing API
- */
 async function sendTrace(
 	node: IExecuteFunctions,
 	serverUrl: string,
@@ -265,6 +277,16 @@ export class MiboTesting implements INodeType {
 			},
 		],
 		properties: [
+			{
+				displayName: 'Target Nodes',
+				name: 'targetNodes',
+				type: 'string',
+				default: '',
+				required: true,
+				description: 'Names of the nodes to capture data from, separated by commas. Use the exact names as they appear in your workflow. If you have created test cases in Mibo, these nodes should match for procedural testing. Semantic testing uses the final output.',
+				placeholder: 'e.g., Webhook, HTTP Request, AI Agent',
+				hint: 'Enter the exact node names separated by commas',
+			},
 			{
 				displayName: 'Platform ID',
 				name: 'platformId',
@@ -363,6 +385,22 @@ export class MiboTesting implements INodeType {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
 
+		const targetNodesInput = this.getNodeParameter('targetNodes', 0, '') as string;
+		const targetNodes = targetNodesInput
+			.split(',')
+			.map(name => name.trim())
+			.filter(name => name.length > 0);
+
+		if (targetNodes.length === 0) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'You must specify at least one target node',
+				{
+					description: 'Enter the names of the nodes you want to capture data from, separated by commas. Example: "Webhook, HTTP Request, AI Agent"',
+				}
+			);
+		}
+
 		const credentials = await this.getCredentials('miboTestingApi');
 		const platformId = this.getNodeParameter('platformId', 0, '') as string;
 		const externalId = this.getNodeParameter('externalId', 0, '') as string;
@@ -405,19 +443,68 @@ export class MiboTesting implements INodeType {
 			this,
 		);
 
+		const proxy = this.getWorkflowDataProxy(0);
+		const nodesData: IDataObject[] = [];
+		let requestId: string | undefined;
+
+		for (const item of items) {
+			requestId = findRequestIdInData(item.json as IDataObject);
+			if (requestId) {
+				break;
+			}
+		}
+
+		for (const nodeName of targetNodes) {
+			const nodeProxy = proxy.$node[nodeName];
+			if (nodeProxy) {
+				try {
+					const nodeItems = proxy.$items(nodeName);
+					if (nodeItems && nodeItems.length > 0) {
+						const nodeItemsData: IDataObject[] = [];
+						for (const nodeItem of nodeItems) {
+							const itemJson = nodeItem.json as IDataObject;
+							nodeItemsData.push(itemJson);
+
+							if (!requestId) {
+								requestId = findRequestIdInData(itemJson);
+							}
+						}
+						nodesData.push({
+							nodeName,
+							items: nodeItemsData,
+						});
+					}
+				} catch {
+					try {
+						const nodeJson = nodeProxy.json as IDataObject;
+						nodesData.push({
+							nodeName,
+							items: [nodeJson],
+						});
+
+						if (!requestId) {
+							requestId = findRequestIdInData(nodeJson);
+						}
+					} catch {
+						// Could not access node data
+					}
+				}
+			}
+		}
+
 		const tracePayload = buildTracePayload(
 			inputData,
 			workflowId,
 			metadata,
 			platformId,
 			externalId,
+			nodesData,
 		);
 
 		const serverUrl = normalizeServerUrl(
 			options.serverUrl || credentials.serverUrl as string || DEFAULT_SERVER_URL
 		);
 		const timeout = (options.timeout || DEFAULT_TIMEOUT_SECONDS) * 1000;
-		const requestId = extractRequestId(items[0]?.json as IDataObject);
 		try {
 			const response = await sendTrace(
 				this,
@@ -434,9 +521,10 @@ export class MiboTesting implements INodeType {
 						...items[i].json,
 						_miboTrace: {
 							sent: true,
-							traceId: response?.traceId || response?.id || 'unknown',
-							platformId: platformId || 'resolved-from-metadata',
+							traceId: response?.data?.id || 'unknown',
+							platformId: platformId || 'resolved-from-api-key',
 							timestamp,
+							nodesCollected: nodesData.length,
 						},
 					},
 					pairedItem: { item: i },
