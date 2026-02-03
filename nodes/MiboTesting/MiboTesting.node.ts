@@ -8,7 +8,7 @@ import type {
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import type { NodeOptions } from './types';
-import { DEFAULT_SERVER_URL, DEFAULT_TIMEOUT_SECONDS, MAX_EXTERNAL_ID_LENGTH } from './constants';
+import { DEFAULT_SERVER_URL, DEFAULT_TIMEOUT_SECONDS } from './constants';
 import { isValidUUID, normalizeServerUrl, findRequestIdInData } from './utils';
 import { buildMetadata, buildTracePayload } from './builders';
 import { sendTrace, parseErrorResponse, calculatePayloadSize, formatBytes, getPayloadSizeWarning } from './mibo-client';
@@ -115,14 +115,6 @@ export class MiboTesting implements INodeType {
 				default: '',
 				description: 'The unique identifier for your platform in Mibo Testing (UUID format)',
 				placeholder: 'e.g., 550e8400-e29b-41d4-a716-446655440000',
-			},
-			{
-				displayName: 'External ID',
-				name: 'externalId',
-				type: 'string',
-				default: '',
-				description: 'Your custom trace identifier (max 255 characters)',
-				placeholder: 'e.g., trace-123',
 			},
 			{
 				displayName: 'Include Metadata',
@@ -271,7 +263,6 @@ export class MiboTesting implements INodeType {
 
 		const credentials = await this.getCredentials('miboTestingApi');
 		const platformId = this.getNodeParameter('platformId', 0, '') as string;
-		const externalId = this.getNodeParameter('externalId', 0, '') as string;
 		const includeMetadata = this.getNodeParameter('includeMetadata', 0, false) as boolean;
 		const options = this.getNodeParameter('options', 0, {}) as NodeOptions;
 
@@ -285,15 +276,6 @@ export class MiboTesting implements INodeType {
 			);
 		}
 
-		if (externalId && externalId.length > MAX_EXTERNAL_ID_LENGTH) {
-			throw new NodeOperationError(
-				this.getNode(),
-				`External ID must not exceed ${MAX_EXTERNAL_ID_LENGTH} characters`,
-				{
-					description: `The External ID is ${externalId.length} characters long. Maximum allowed is ${MAX_EXTERNAL_ID_LENGTH}.`,
-				}
-			);
-		}
 
 		const workflowData = this.getWorkflow();
 		const workflowId = workflowData.id || 'unknown';
@@ -325,6 +307,7 @@ export class MiboTesting implements INodeType {
 			}
 		}
 
+		const externalId = requestId;
 		for (const nodeName of targetNodes) {
 			const nodeProxy = proxy.$node[nodeName];
 			if (!nodeProxy) {
@@ -393,7 +376,7 @@ export class MiboTesting implements INodeType {
 			workflowId,
 			metadata,
 			platformId,
-			externalId,
+			externalId || '',
 			nodesData,
 		);
 

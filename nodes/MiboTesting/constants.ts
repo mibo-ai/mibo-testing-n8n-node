@@ -1,7 +1,6 @@
 export const DEFAULT_SERVER_URL = 'https://api.mibo-ai.com';
 export const DEFAULT_TIMEOUT_SECONDS = 30;
 export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-export const MAX_EXTERNAL_ID_LENGTH = 255;
 export const MAX_PAYLOAD_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 export const MAX_PAYLOAD_SIZE_MB = 10;
 
