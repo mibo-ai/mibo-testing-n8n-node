@@ -1,6 +1,7 @@
+import { gzipSync } from 'zlib';
 import type { IExecuteFunctions, IDataObject, IHttpRequestMethods } from 'n8n-workflow';
 import type { MiboSuccessResponse, MiboErrorResponse, TracePayload } from './types';
-import { ERROR_CODES, MAX_PAYLOAD_SIZE_MB } from './constants';
+import { ERROR_CODES, MAX_PAYLOAD_SIZE_MB, GZIP_THRESHOLD_BYTES } from './constants';
 
 export function parseErrorResponse(error: unknown): string {
 	const err = error as { response?: { data?: MiboErrorResponse }; message?: string };
@@ -73,6 +74,23 @@ export async function sendTrace(
 
 	if (requestId) {
 		headers['x-request-id'] = requestId;
+	}
+
+	const jsonString = JSON.stringify(payload);
+	const payloadSize = Buffer.byteLength(jsonString, 'utf8');
+	const useCompression = payloadSize > GZIP_THRESHOLD_BYTES;
+	if (useCompression) {
+		const compressed = gzipSync(jsonString);
+		headers['Content-Encoding'] = 'gzip';
+		headers['Content-Type'] = 'application/octet-stream';
+		return node.helpers.httpRequest({
+			method: 'POST' as IHttpRequestMethods,
+			url: `${serverUrl}/traces`,
+			headers,
+			body: compressed,
+			json: false,
+			timeout,
+		});
 	}
 
 	return node.helpers.httpRequest({
