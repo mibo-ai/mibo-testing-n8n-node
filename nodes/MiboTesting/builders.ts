@@ -1,0 +1,85 @@
+import type { IExecuteFunctions, IDataObject } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
+import type { TracePayload, MetadataFields } from './types';
+
+export function buildMetadata(
+	workflowId: string,
+	workflowName: string,
+	timestamp: string,
+	includeMetadata: boolean,
+	metadataConfig: IDataObject,
+	node: IExecuteFunctions,
+): IDataObject {
+	const metadata: IDataObject = {
+		workflowId,
+		workflowName,
+		timestamp,
+	};
+
+	if (!includeMetadata) {
+		return metadata;
+	}
+
+	const fields = metadataConfig.fields as MetadataFields | undefined;
+	if (!fields) {
+		return metadata;
+	}
+
+	if (fields.environment) {
+		metadata.environment = fields.environment;
+	}
+
+	if (fields.version) {
+		metadata.version = fields.version;
+	}
+
+	if (fields.additionalFields) {
+		try {
+			const additionalFields = typeof fields.additionalFields === 'string'
+				? JSON.parse(fields.additionalFields)
+				: fields.additionalFields;
+			Object.assign(metadata, additionalFields);
+		} catch {
+			throw new NodeOperationError(
+				node.getNode(),
+				'Invalid JSON in Additional Fields',
+				{ description: 'Please ensure the Additional Fields contains valid JSON' }
+			);
+		}
+	}
+
+	return metadata;
+}
+
+export function buildTracePayload(
+	inputData: IDataObject[],
+	workflowId: string,
+	metadata: IDataObject,
+	platformId: string,
+	externalId: string,
+	nodesData?: IDataObject[],
+): TracePayload {
+	const payload: TracePayload = {
+		data: {
+			input: inputData,
+		},
+		externalMetadata: {
+			workflowId,
+		},
+		metadata,
+	};
+
+	if (nodesData && nodesData.length > 0) {
+		payload.data.nodes = nodesData;
+	}
+
+	if (platformId) {
+		payload.platformId = platformId;
+	}
+
+	if (externalId) {
+		payload.externalId = externalId;
+	}
+
+	return payload;
+}

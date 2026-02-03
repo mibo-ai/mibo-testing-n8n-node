@@ -4,258 +4,14 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 	IDataObject,
-	IHttpRequestMethods,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
-const DEFAULT_SERVER_URL = 'https://api.mibo-ai.com';
-const DEFAULT_TIMEOUT_SECONDS = 30;
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const MAX_EXTERNAL_ID_LENGTH = 255;
-
-const ERROR_CODES = {
-	MISSING_API_KEY: 'Missing x-api-key header. Make sure you are sending the API key in the headers.',
-	INVALID_API_KEY: 'The API key does not exist or has been revoked. Verify that you are using a valid API key.',
-	VALIDATION_ERROR: 'The request body failed validation.',
-	PLATFORM_NOT_FOUND: {
-		withRestrictions: 'The API key is restricted to specific platforms. Verify that the platformId matches one of the allowed platforms.',
-		withoutRestrictions: 'Could not determine the target platform. Send a platformId in the body, or restrict the API key to a single platform.',
-	},
-	AUTH_ERROR: 'Internal error while validating the API key. Contact support.',
-	INTERNAL_SERVER_ERROR: 'Unexpected server error. Contact support if it persists.',
-} as const;
-
-interface MiboErrorResponse {
-	success: false;
-	timestamp: string;
-	error: {
-		code: string;
-		message: string;
-		details?: Array<{
-			type: string;
-			msg: string;
-			path: string;
-			location: string;
-		}>;
-	};
-}
-
-interface MiboSuccessResponse {
-	success: boolean;
-	data: {
-		id: string;
-		platformId: string;
-		externalId?: string;
-		status: string;
-		createdAt: string;
-		updatedAt: string;
-	};
-	message: string;
-	timestamp: string;
-}
-
-interface TracePayload {
-	data: {
-		input: IDataObject[];
-		nodes?: IDataObject[];
-	};
-	externalMetadata: {
-		workflowId: string;
-	};
-	metadata: IDataObject;
-	platformId?: string;
-	externalId?: string;
-}
-
-interface NodeOptions {
-	serverUrl?: string;
-	timeout?: number;
-}
-
-interface MetadataFields {
-	environment?: string;
-	version?: string;
-	additionalFields?: string | IDataObject;
-}
-
-function isValidUUID(value: string): boolean {
-	return UUID_REGEX.test(value);
-}
-
-function normalizeServerUrl(url: string): string {
-	return url.trim().replace(/\/+$/, '');
-}
-
-function extractRequestIdFromHeaders(headers: IDataObject | undefined): string | undefined {
-	if (!headers) {
-		return undefined;
-	}
-
-	const headerKey = Object.keys(headers).find(
-		key => key.toLowerCase() === 'x-request-id'
-	);
-
-	return headerKey ? (headers[headerKey] as string) : undefined;
-}
-
-function findRequestIdInData(data: IDataObject): string | undefined {
-	if (data.headers) {
-		const requestId = extractRequestIdFromHeaders(data.headers as IDataObject);
-		if (requestId) return requestId;
-	}
-
-	for (const value of Object.values(data)) {
-		if (value && typeof value === 'object' && !Array.isArray(value)) {
-			const requestId = findRequestIdInData(value as IDataObject);
-			if (requestId) {
-				return requestId;
-			}
-		}
-	}
-
-	return undefined;
-}
-
-function parseErrorResponse(error: unknown): string {
-	const err = error as { response?: { data?: MiboErrorResponse }; message?: string };
-	const errorData = err.response?.data;
-
-	if (errorData?.error?.code) {
-		const code = errorData.error.code;
-		let baseMessage: string;
-		if (code === 'PLATFORM_NOT_FOUND') {
-			const serverMessage = errorData.error.message || '';
-			const hasRestrictions = serverMessage.toLowerCase().includes('restricted') ||
-				serverMessage.toLowerCase().includes('allowed');
-			baseMessage = hasRestrictions
-				? ERROR_CODES.PLATFORM_NOT_FOUND.withRestrictions
-				: ERROR_CODES.PLATFORM_NOT_FOUND.withoutRestrictions;
-		} else {
-			const errorCode = ERROR_CODES[code as keyof typeof ERROR_CODES];
-			baseMessage = (typeof errorCode === 'string' ? errorCode : null) || errorData.error.message;
-		}
-
-		if (errorData.error.details?.length) {
-			const details = errorData.error.details
-				.map(d => `${d.path}: ${d.msg}`)
-				.join('; ');
-			return `${baseMessage} Details: ${details}`;
-		}
-
-		return baseMessage;
-	}
-
-	return err.message || 'Unknown error while sending the trace';
-}
-
-function buildMetadata(
-	workflowId: string,
-	workflowName: string,
-	timestamp: string,
-	includeMetadata: boolean,
-	metadataConfig: IDataObject,
-	node: IExecuteFunctions,
-): IDataObject {
-	const metadata: IDataObject = {
-		workflowId,
-		workflowName,
-		timestamp,
-	};
-
-	if (!includeMetadata) {
-		return metadata;
-	}
-
-	const fields = metadataConfig.fields as MetadataFields | undefined;
-	if (!fields) {
-		return metadata;
-	}
-
-	if (fields.environment) {
-		metadata.environment = fields.environment;
-	}
-
-	if (fields.version) {
-		metadata.version = fields.version;
-	}
-
-	if (fields.additionalFields) {
-		try {
-			const additionalFields = typeof fields.additionalFields === 'string'
-				? JSON.parse(fields.additionalFields)
-				: fields.additionalFields;
-			Object.assign(metadata, additionalFields);
-		} catch {
-			throw new NodeOperationError(
-				node.getNode(),
-				'Invalid JSON in Additional Fields',
-				{ description: 'Please ensure the Additional Fields contains valid JSON' }
-			);
-		}
-	}
-
-	return metadata;
-}
-
-function buildTracePayload(
-	inputData: IDataObject[],
-	workflowId: string,
-	metadata: IDataObject,
-	platformId: string,
-	externalId: string,
-	nodesData?: IDataObject[],
-): TracePayload {
-	const payload: TracePayload = {
-		data: {
-			input: inputData,
-		},
-		externalMetadata: {
-			workflowId,
-		},
-		metadata,
-	};
-
-	if (nodesData && nodesData.length > 0) {
-		payload.data.nodes = nodesData;
-	}
-
-	if (platformId) {
-		payload.platformId = platformId;
-	}
-
-	if (externalId) {
-		payload.externalId = externalId;
-	}
-
-	return payload;
-}
-
-async function sendTrace(
-	node: IExecuteFunctions,
-	serverUrl: string,
-	apiKey: string,
-	payload: TracePayload,
-	timeout: number,
-	requestId?: string,
-): Promise<MiboSuccessResponse> {
-	const headers: IDataObject = {
-		'x-api-key': apiKey,
-		'Content-Type': 'application/json',
-	};
-
-	if (requestId) {
-		headers['x-request-id'] = requestId;
-	}
-
-	return node.helpers.httpRequest({
-		method: 'POST' as IHttpRequestMethods,
-		url: `${serverUrl}/traces`,
-		headers,
-		body: payload,
-		json: true,
-		timeout,
-	});
-}
+import type { NodeOptions } from './types';
+import { DEFAULT_SERVER_URL, DEFAULT_TIMEOUT_SECONDS, MAX_EXTERNAL_ID_LENGTH } from './constants';
+import { isValidUUID, normalizeServerUrl, findRequestIdInData } from './utils';
+import { buildMetadata, buildTracePayload } from './builders';
+import { sendTrace, parseErrorResponse, calculatePayloadSize, formatBytes, getPayloadSizeWarning } from './mibo-client';
 
 export class MiboTesting implements INodeType {
 	description: INodeTypeDescription = {
@@ -278,14 +34,79 @@ export class MiboTesting implements INodeType {
 		],
 		properties: [
 			{
+				displayName: 'Use Get Workflow Node',
+				name: 'useGetWorkflow',
+				type: 'boolean',
+				default: false,
+				description: 'Whether to use n8n\'s "Get Workflow" node to automatically detect nodes. Connect a "Get Workflow" node before this one.',
+			},
+			{
+				displayName: 'Node Filter',
+				name: 'nodeFilterPreset',
+				type: 'options',
+				default: 'all',
+				description: 'Choose which nodes to capture from the workflow',
+				displayOptions: {
+					show: {
+						useGetWorkflow: [true],
+					},
+				},
+				options: [
+					{
+						name: 'All Nodes',
+						value: 'all',
+						description: 'Capture data from all workflow nodes',
+					},
+					{
+						name: 'AI Nodes Only',
+						value: 'ai',
+						description: 'Only nodes with "AI" in their name',
+					},
+					{
+						name: 'HTTP/Webhook Only',
+						value: 'http',
+						description: 'Only HTTP Request and Webhook nodes',
+					},
+					{
+						name: 'Exclude Utility Nodes',
+						value: 'excludeUtility',
+						description: 'Exclude Set, If, Merge, Switch nodes',
+					},
+					{
+						name: 'Custom',
+						value: 'custom',
+						description: 'Select specific nodes by name',
+					},
+				],
+			},
+			{
 				displayName: 'Target Nodes',
 				name: 'targetNodes',
 				type: 'string',
 				default: '',
 				required: true,
-				description: 'Names of the nodes to capture data from, separated by commas. Use the exact names as they appear in your workflow. If you have created test cases in Mibo, these nodes should match for procedural testing. Semantic testing uses the final output.',
-				placeholder: 'e.g., Webhook, HTTP Request, AI Agent',
-				hint: 'Enter the exact node names separated by commas',
+				description: 'Names of the nodes to capture data from, separated by commas',
+				placeholder: 'Webhook, HTTP Request, AI Agent',
+				displayOptions: {
+					show: {
+						useGetWorkflow: [false],
+					},
+				},
+			},
+			{
+				displayName: 'Custom Node Names',
+				name: 'customTargetNodes',
+				type: 'string',
+				default: '',
+				required: true,
+				description: 'Names of the nodes to capture, separated by commas. Use expression {{ $json.nodes.map(n => n.name).join(\', \') }} to see all available nodes.',
+				placeholder: 'Webhook, HTTP Request, AI Agent',
+				displayOptions: {
+					show: {
+						useGetWorkflow: [true],
+						nodeFilterPreset: ['custom'],
+					},
+				},
 			},
 			{
 				displayName: 'Platform ID',
@@ -385,18 +206,65 @@ export class MiboTesting implements INodeType {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
 
-		const targetNodesInput = this.getNodeParameter('targetNodes', 0, '') as string;
-		const targetNodes = targetNodesInput
-			.split(',')
-			.map(name => name.trim())
-			.filter(name => name.length > 0);
+		const useGetWorkflow = this.getNodeParameter('useGetWorkflow', 0, false) as boolean;
+		let targetNodes: string[] = [];
+		if (useGetWorkflow) {
+			const nodeFilterPreset = this.getNodeParameter('nodeFilterPreset', 0, 'all') as string;
+			const inputNodes = items[0]?.json?.nodes as Array<{ name: string; type: string }> | undefined;
+			if (!inputNodes || !Array.isArray(inputNodes)) {
+				throw new NodeOperationError(
+					this.getNode(),
+					'No workflow nodes found in input data',
+					{
+						description: 'Make sure to connect a "Get Workflow" node before this node. The input should contain a "nodes" array.',
+					}
+				);
+			}
+
+			if (nodeFilterPreset === 'custom') {
+				const customTargetNodes = this.getNodeParameter('customTargetNodes', 0, '') as string;
+				targetNodes = customTargetNodes
+					.split(',')
+					.map(name => name.trim())
+					.filter(name => name.length > 0);
+			} else {
+				let filteredNodes = inputNodes;
+				switch (nodeFilterPreset) {
+					case 'ai':
+						filteredNodes = inputNodes.filter(n => n.name.toLowerCase().includes('ai'));
+						break;
+					case 'http':
+						filteredNodes = inputNodes.filter(n => {
+							const nodeType = n.type?.split('.').pop()?.toLowerCase() || '';
+							return ['httprequest', 'webhook'].includes(nodeType);
+						});
+						break;
+					case 'excludeUtility':
+						filteredNodes = inputNodes.filter(n => {
+							const nodeType = n.type?.split('.').pop()?.toLowerCase() || '';
+							return !['set', 'if', 'merge', 'switch'].includes(nodeType);
+						});
+						break;
+				}
+
+				targetNodes = filteredNodes.map(n => n.name);
+			}
+		} else {
+			const targetNodesInput = this.getNodeParameter('targetNodes', 0, '') as string;
+			targetNodes = targetNodesInput
+				.split(',')
+				.map(name => name.trim())
+				.filter(name => name.length > 0);
+		}
 
 		if (targetNodes.length === 0) {
 			throw new NodeOperationError(
 				this.getNode(),
-				'You must specify at least one target node',
+				'No target nodes configured',
 				{
-					description: 'Enter the names of the nodes you want to capture data from, separated by commas. Example: "Webhook, HTTP Request, AI Agent"',
+					description: useGetWorkflow
+						? 'No nodes matched the selected filter. Try a different filter or check that the Get Workflow node is providing data.'
+						: 'Enter node names separated by commas. Example: "Webhook, HTTP Request, AI Agent"',
 				}
 			);
 		}
@@ -406,6 +274,7 @@ export class MiboTesting implements INodeType {
 		const externalId = this.getNodeParameter('externalId', 0, '') as string;
 		const includeMetadata = this.getNodeParameter('includeMetadata', 0, false) as boolean;
 		const options = this.getNodeParameter('options', 0, {}) as NodeOptions;
+
 		if (platformId && !isValidUUID(platformId)) {
 			throw new NodeOperationError(
 				this.getNode(),
@@ -445,6 +314,8 @@ export class MiboTesting implements INodeType {
 
 		const proxy = this.getWorkflowDataProxy(0);
 		const nodesData: IDataObject[] = [];
+		const nodesNotFound: string[] = [];
+		const nodesNotExecuted: string[] = [];
 		let requestId: string | undefined;
 
 		for (const item of items) {
@@ -456,40 +327,65 @@ export class MiboTesting implements INodeType {
 
 		for (const nodeName of targetNodes) {
 			const nodeProxy = proxy.$node[nodeName];
-			if (nodeProxy) {
-				try {
-					const nodeItems = proxy.$items(nodeName);
-					if (nodeItems && nodeItems.length > 0) {
-						const nodeItemsData: IDataObject[] = [];
-						for (const nodeItem of nodeItems) {
-							const itemJson = nodeItem.json as IDataObject;
-							nodeItemsData.push(itemJson);
+			if (!nodeProxy) {
+				nodesNotFound.push(nodeName);
+				continue;
+			}
 
-							if (!requestId) {
-								requestId = findRequestIdInData(itemJson);
-							}
-						}
-						nodesData.push({
-							nodeName,
-							items: nodeItemsData,
-						});
-					}
-				} catch {
-					try {
-						const nodeJson = nodeProxy.json as IDataObject;
-						nodesData.push({
-							nodeName,
-							items: [nodeJson],
-						});
+			try {
+				const nodeItems = proxy.$items(nodeName);
+				if (nodeItems && nodeItems.length > 0) {
+					const nodeItemsData: IDataObject[] = [];
+					for (const nodeItem of nodeItems) {
+						const itemJson = nodeItem.json as IDataObject;
+						nodeItemsData.push(itemJson);
 
 						if (!requestId) {
-							requestId = findRequestIdInData(nodeJson);
+							requestId = findRequestIdInData(itemJson);
 						}
-					} catch {
-						// Could not access node data
 					}
+					nodesData.push({
+						nodeName,
+						items: nodeItemsData,
+					});
+				} else {
+					nodesNotExecuted.push(nodeName);
+					nodesData.push({
+						nodeName,
+						items: [],
+						_notExecuted: true,
+					});
+				}
+			} catch {
+				try {
+					const nodeJson = nodeProxy.json as IDataObject;
+					nodesData.push({
+						nodeName,
+						items: [nodeJson],
+					});
+
+					if (!requestId) {
+						requestId = findRequestIdInData(nodeJson);
+					}
+				} catch {
+					nodesNotExecuted.push(nodeName);
+					nodesData.push({
+						nodeName,
+						items: [],
+						_notExecuted: true,
+					});
 				}
 			}
+		}
+
+		if (nodesNotFound.length > 0) {
+			throw new NodeOperationError(
+				this.getNode(),
+				`Nodes not found in workflow: '${nodesNotFound.join("', '")}'`,
+				{
+					description: 'Check the exact node names. Node names are case-sensitive and must match exactly as they appear in your workflow.',
+				}
+			);
 		}
 
 		const tracePayload = buildTracePayload(
@@ -505,6 +401,11 @@ export class MiboTesting implements INodeType {
 			options.serverUrl || credentials.serverUrl as string || DEFAULT_SERVER_URL
 		);
 		const timeout = (options.timeout || DEFAULT_TIMEOUT_SECONDS) * 1000;
+
+		const payloadSize = calculatePayloadSize(tracePayload);
+		const payloadSizeFormatted = formatBytes(payloadSize);
+		const payloadWarning = getPayloadSizeWarning(payloadSize);
+
 		try {
 			const response = await sendTrace(
 				this,
@@ -516,16 +417,29 @@ export class MiboTesting implements INodeType {
 			);
 
 			for (let i = 0; i < items.length; i++) {
+				const traceInfo: IDataObject = {
+					sent: true,
+					traceId: response?.data?.id || 'unknown',
+					platformId: platformId || 'resolved-from-api-key',
+					timestamp,
+					nodesCollected: nodesData.filter(n => !n._notExecuted).length,
+					targetNodes: targetNodes,
+					payloadSize: payloadSizeFormatted,
+				};
+
+				if (payloadWarning) {
+					traceInfo.payloadWarning = payloadWarning;
+				}
+
+				if (nodesNotExecuted.length > 0) {
+					traceInfo.warning = `Some nodes did not execute in this workflow branch: ${nodesNotExecuted.join(', ')}`;
+					traceInfo.nodesNotExecuted = nodesNotExecuted;
+				}
+
 				returnData.push({
 					json: {
 						...items[i].json,
-						_miboTrace: {
-							sent: true,
-							traceId: response?.data?.id || 'unknown',
-							platformId: platformId || 'resolved-from-api-key',
-							timestamp,
-							nodesCollected: nodesData.length,
-						},
+						_miboTrace: traceInfo,
 					},
 					pairedItem: { item: i },
 				});
@@ -543,17 +457,22 @@ export class MiboTesting implements INodeType {
 								error: errorMessage,
 								platformId: platformId || 'unknown',
 								timestamp,
+								targetNodes: targetNodes,
+								payloadSize: payloadSizeFormatted,
 							},
 						},
 						pairedItem: { item: i },
 					});
 				}
 			} else {
+				const isPayloadTooLarge = errorMessage.toLowerCase().includes('too large');
 				throw new NodeOperationError(
 					this.getNode(),
 					`Failed to send trace to Mibo Testing: ${errorMessage}`,
 					{
-						description: 'Check your API key and server URL in the credentials',
+						description: isPayloadTooLarge
+							? 'Try reducing the number of target nodes or exclude nodes with large data (files, images, etc.)'
+							: 'Check your API key and server URL in the credentials',
 					}
 				);
 			}
