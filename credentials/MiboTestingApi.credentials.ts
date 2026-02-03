@@ -1,5 +1,6 @@
 import type {
 	IAuthenticateGeneric,
+	Icon,
 	ICredentialTestRequest,
 	ICredentialType,
 	INodeProperties,
@@ -7,11 +8,9 @@ import type {
 
 export class MiboTestingApi implements ICredentialType {
 	name = 'miboTestingApi';
-
 	displayName = 'Mibo Testing API';
-
 	documentationUrl = 'https://docs.mibo-testing.com/integrations/n8n';
-
+	icon? = 'file:mibo-testing.svg' as Icon;
 	properties: INodeProperties[] = [
 		{
 			displayName: 'API Key',
@@ -28,6 +27,22 @@ export class MiboTestingApi implements ICredentialType {
 			type: 'string',
 			default: 'https://api.mibo-ai.com',
 			description: 'The Mibo Testing server URL. Only change this if you are using a self-hosted instance.',
+		},
+		// Optional n8n API fields for enhanced node selection
+		{
+			displayName: 'n8n API Key (Optional)',
+			name: 'n8nApiKey',
+			type: 'string',
+			typeOptions: { password: true },
+			default: '',
+			description: 'Your n8n API key for automatic node selection. Create one in n8n Settings > API. Leave empty to use manual node entry.',
+		},
+		{
+			displayName: 'n8n Base URL',
+			name: 'n8nBaseUrl',
+			type: 'string',
+			default: 'http://localhost:5678',
+			description: 'The base URL of your n8n instance. Only needed if you set an n8n API Key.',
 		},
 	];
 
