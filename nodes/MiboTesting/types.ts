@@ -1,79 +1,79 @@
 import type { IDataObject } from 'n8n-workflow';
 
 export interface MiboErrorResponse {
-	success: false;
-	timestamp: string;
-	error: {
-		code: string;
-		message: string;
-		details?: Array<{
-			type: string;
-			msg: string;
-			path: string;
-			location: string;
-		}>;
-	};
+  error: {
+    code: string;
+    details?: Array<{
+      location: string;
+      msg: string;
+      path: string;
+      type: string;
+    }>;
+    message: string;
+  };
+  success: false;
+  timestamp: string;
 }
 
 export interface MiboSuccessResponse {
-	success: boolean;
-	data: {
-		id: string;
-		platformId: string;
-		externalId?: string;
-		status: string;
-		createdAt: string;
-		updatedAt: string;
-	};
-	message: string;
-	timestamp: string;
+  data: {
+    createdAt: string;
+    externalId?: string;
+    id: string;
+    platformId: string;
+    status: string;
+    updatedAt: string;
+  };
+  message: string;
+  success: boolean;
+  timestamp: string;
 }
 
 export interface NodeDataInput {
-	nodeName: string;
-	items: IDataObject[];
-	type?: string;
-	_notExecuted?: boolean;
+  _notExecuted?: boolean;
+  items: IDataObject[];
+  nodeName: string;
+  type?: string;
 }
 
 export interface TracePayload {
-	data: {
-		input: IDataObject[];
-		nodes?: NodeDataInput[];
-	};
-	externalMetadata: {
-		workflowId: string;
-	};
-	metadata: IDataObject;
-	platformId?: string;
-	externalId?: string;
+  data: {
+    input: IDataObject[];
+    nodes?: NodeDataInput[];
+  };
+  externalId?: string;
+  externalMetadata: {
+    workflowId: string;
+  };
+  metadata: IDataObject;
+  platformId?: string;
 }
 
 export interface NodeOptions {
-	serverUrl?: string;
-	timeout?: number;
+  serverUrl?: string;
+  timeout?: number;
 }
 
 export interface MetadataFields {
-	environment?: string;
-	version?: string;
-	additionalFields?: string | IDataObject;
+  additionalFields?: string | IDataObject;
+  environment?: string;
+  version?: string;
 }
 
 export interface OptimizedNodeData {
-	output: IDataObject | IDataObject[];
-	type: string;
-	status: 'success' | 'skipped';
+  output: IDataObject | IDataObject[];
+  status: 'success' | 'skipped';
+  type: string;
 }
 
 export interface OptimizedTracePayload {
-	status: 'success' | 'partial';
-	data: Record<string, OptimizedNodeData>;
-	metadata: {
-		workflow_id: string;
-		workflow_name: string;
-		timestamp: string;
-		[key: string]: unknown;
-	};
-	platformId?: string;
+  data: Record<string, OptimizedNodeData>;
+  metadata: {
+    [key: string]: unknown;
+    timestamp: string;
+    workflow_id: string;
+    workflow_name: string;
+  };
+  platformId?: string;
+  status: 'success' | 'partial';
 }

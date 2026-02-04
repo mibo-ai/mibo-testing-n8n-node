@@ -1,132 +1,138 @@
-import type { IExecuteFunctions, IDataObject } from 'n8n-workflow';
+import type {
+  MetadataFields,
+  NodeDataInput,
+  OptimizedNodeData,
+  OptimizedTracePayload,
+  TracePayload,
+} from './types';
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
+
 import { NodeOperationError } from 'n8n-workflow';
-import type { TracePayload, MetadataFields, OptimizedTracePayload, OptimizedNodeData, NodeDataInput } from './types';
 
 export function buildMetadata(
-	workflowId: string,
-	workflowName: string,
-	timestamp: string,
-	includeMetadata: boolean,
-	metadataConfig: IDataObject,
-	node: IExecuteFunctions,
+  workflowId: string,
+  workflowName: string,
+  timestamp: string,
+  includeMetadata: boolean,
+  metadataConfig: IDataObject,
+  node: IExecuteFunctions,
 ): IDataObject {
-	const metadata: IDataObject = {
-		workflowId,
-		workflowName,
-		timestamp,
-	};
+  const metadata: IDataObject = {
+    workflowId,
+    workflowName,
+    timestamp,
+  };
 
-	if (!includeMetadata) {
-		return metadata;
-	}
+  if (!includeMetadata) {
+    return metadata;
+  }
 
-	const fields = metadataConfig.fields as MetadataFields | undefined;
-	if (!fields) {
-		return metadata;
-	}
+  const fields = metadataConfig.fields as MetadataFields | undefined;
+  if (!fields) {
+    return metadata;
+  }
 
-	if (fields.environment) {
-		metadata.environment = fields.environment;
-	}
+  if (fields.environment) {
+    metadata.environment = fields.environment;
+  }
 
-	if (fields.version) {
-		metadata.version = fields.version;
-	}
+  if (fields.version) {
+    metadata.version = fields.version;
+  }
 
-	if (fields.additionalFields) {
-		try {
-			const additionalFields = typeof fields.additionalFields === 'string'
-				? JSON.parse(fields.additionalFields)
-				: fields.additionalFields;
-			Object.assign(metadata, additionalFields);
-		} catch {
-			throw new NodeOperationError(
-				node.getNode(),
-				'Invalid JSON in Additional Fields',
-				{ description: 'Please ensure the Additional Fields contains valid JSON' }
-			);
-		}
-	}
+  if (fields.additionalFields) {
+    try {
+      const additionalFields =
+        typeof fields.additionalFields === 'string'
+          ? JSON.parse(fields.additionalFields)
+          : fields.additionalFields;
+      Object.assign(metadata, additionalFields);
+    } catch {
+      throw new NodeOperationError(node.getNode(), 'Invalid JSON in Additional Fields', {
+        description: 'Please ensure the Additional Fields contains valid JSON',
+      });
+    }
+  }
 
-	return metadata;
+  return metadata;
 }
 
 export function buildTracePayload(
-	inputData: IDataObject[],
-	workflowId: string,
-	metadata: IDataObject,
-	platformId: string,
-	externalId: string,
-	nodesData?: NodeDataInput[],
+  inputData: IDataObject[],
+  workflowId: string,
+  metadata: IDataObject,
+  platformId: string,
+  externalId: string,
+  nodesData?: NodeDataInput[],
 ): TracePayload {
-	const payload: TracePayload = {
-		data: {
-			input: inputData,
-		},
-		externalMetadata: {
-			workflowId,
-		},
-		metadata,
-	};
+  const payload: TracePayload = {
+    data: {
+      input: inputData,
+    },
+    externalMetadata: {
+      workflowId,
+    },
+    metadata,
+  };
 
-	if (nodesData && nodesData.length > 0) {
-		payload.data.nodes = nodesData;
-	}
+  if (nodesData && nodesData.length > 0) {
+    payload.data.nodes = nodesData;
+  }
 
-	if (platformId) {
-		payload.platformId = platformId;
-	}
+  if (platformId) {
+    payload.platformId = platformId;
+  }
 
-	if (externalId) {
-		payload.externalId = externalId;
-	}
+  if (externalId) {
+    payload.externalId = externalId;
+  }
 
-	return payload;
+  return payload;
 }
 
 export function buildOptimizedTracePayload(
-	nodesData: NodeDataInput[],
-	workflowId: string,
-	workflowName: string,
-	timestamp: string,
-	platformId?: string,
-	extraMetadata?: IDataObject,
+  nodesData: NodeDataInput[],
+  workflowId: string,
+  workflowName: string,
+  timestamp: string,
+  platformId?: string,
+  extraMetadata?: IDataObject,
 ): OptimizedTracePayload {
-	const data: Record<string, OptimizedNodeData> = {};
-	let hasSkipped = false;
+  const data: Record<string, OptimizedNodeData> = {};
+  let hasSkipped = false;
 
-	for (const node of nodesData) {
-		if (node._notExecuted) {
-			hasSkipped = true;
-			data[node.nodeName] = {
-				output: {},
-				type: node.type || 'unknown',
-				status: 'skipped',
-			};
-		} else {
-			const output = node.items.length === 1 ? node.items[0] : node.items;
-			data[node.nodeName] = {
-				output,
-				type: node.type || 'unknown',
-				status: 'success',
-			};
-		}
-	}
+  for (const node of nodesData) {
+    if (node._notExecuted) {
+      hasSkipped = true;
+      data[node.nodeName] = {
+        output: {},
+        type: node.type || 'unknown',
+        status: 'skipped',
+      };
+    } else {
+      const output = node.items.length === 1 ? node.items[0] : node.items;
+      data[node.nodeName] = {
+        output,
+        type: node.type || 'unknown',
+        status: 'success',
+      };
+    }
+  }
 
-	const payload: OptimizedTracePayload = {
-		status: hasSkipped ? 'partial' : 'success',
-		data,
-		metadata: {
-			workflow_id: workflowId,
-			workflow_name: workflowName,
-			timestamp,
-			...extraMetadata,
-		},
-	};
+  const payload: OptimizedTracePayload = {
+    status: hasSkipped ? 'partial' : 'success',
+    data,
+    metadata: {
+      workflow_id: workflowId,
+      workflow_name: workflowName,
+      timestamp,
+      ...extraMetadata,
+    },
+  };
 
-	if (platformId) {
-		payload.platformId = platformId;
-	}
+  if (platformId) {
+    payload.platformId = platformId;
+  }
 
-	return payload;
+  return payload;
 }

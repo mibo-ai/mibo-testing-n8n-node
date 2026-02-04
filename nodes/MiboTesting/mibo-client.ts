@@ -1,104 +1,110 @@
+import type {
+  MiboErrorResponse,
+  MiboSuccessResponse,
+  OptimizedTracePayload,
+  TracePayload,
+} from './types';
+import type { IDataObject, IExecuteFunctions, IHttpRequestMethods } from 'n8n-workflow';
+
 import { gzipSync } from 'zlib';
-import type { IExecuteFunctions, IDataObject, IHttpRequestMethods } from 'n8n-workflow';
-import type { MiboSuccessResponse, MiboErrorResponse, TracePayload, OptimizedTracePayload } from './types';
-import { ERROR_CODES, MAX_PAYLOAD_SIZE_MB, GZIP_THRESHOLD_BYTES } from './constants';
+
+import { ERROR_CODES, GZIP_THRESHOLD_BYTES, MAX_PAYLOAD_SIZE_MB } from './constants';
 
 export function parseErrorResponse(error: unknown): string {
-	const err = error as { response?: { data?: MiboErrorResponse }; message?: string };
-	const errorData = err.response?.data;
-	const errorMessage = err.message?.toLowerCase() || '';
+  const err = error as { message?: string; response?: { data?: MiboErrorResponse }; };
+  const errorData = err.response?.data;
+  const errorMessage = err.message?.toLowerCase() || '';
 
-	// Check for payload too large error
-	if (errorMessage.includes('entity too large') || errorMessage.includes('payload too large')) {
-		return ERROR_CODES.PAYLOAD_TOO_LARGE;
-	}
+  // Check for payload too large error
+  if (errorMessage.includes('entity too large') || errorMessage.includes('payload too large')) {
+    return ERROR_CODES.PAYLOAD_TOO_LARGE;
+  }
 
-	if (errorData?.error?.code) {
-		const code = errorData.error.code;
-		let baseMessage: string;
-		if (code === 'PLATFORM_NOT_FOUND') {
-			const serverMessage = errorData.error.message || '';
-			const hasRestrictions = serverMessage.toLowerCase().includes('restricted') ||
-				serverMessage.toLowerCase().includes('allowed');
-			baseMessage = hasRestrictions
-				? ERROR_CODES.PLATFORM_NOT_FOUND.withRestrictions
-				: ERROR_CODES.PLATFORM_NOT_FOUND.withoutRestrictions;
-		} else {
-			const errorCode = ERROR_CODES[code as keyof typeof ERROR_CODES];
-			baseMessage = (typeof errorCode === 'string' ? errorCode : null) || errorData.error.message;
-		}
+  if (errorData?.error?.code) {
+    const code = errorData.error.code;
+    let baseMessage: string;
+    if (code === 'PLATFORM_NOT_FOUND') {
+      const serverMessage = errorData.error.message || '';
+      const hasRestrictions =
+        serverMessage.toLowerCase().includes('restricted') ||
+        serverMessage.toLowerCase().includes('allowed');
+      baseMessage = hasRestrictions
+        ? ERROR_CODES.PLATFORM_NOT_FOUND.withRestrictions
+        : ERROR_CODES.PLATFORM_NOT_FOUND.withoutRestrictions;
+    } else {
+      const errorCode = ERROR_CODES[code as keyof typeof ERROR_CODES];
+      baseMessage = (typeof errorCode === 'string' ? errorCode : null) || errorData.error.message;
+    }
 
-		if (errorData.error.details?.length) {
-			const details = errorData.error.details
-				.map(d => `${d.path}: ${d.msg}`)
-				.join('; ');
-			return `${baseMessage} Details: ${details}`;
-		}
+    if (errorData.error.details?.length) {
+      const details = errorData.error.details.map((d) => `${d.path}: ${d.msg}`).join('; ');
+      return `${baseMessage} Details: ${details}`;
+    }
 
-		return baseMessage;
-	}
+    return baseMessage;
+  }
 
-	return err.message || 'Unknown error while sending the trace';
+  return err.message || 'Unknown error while sending the trace';
 }
 
 export function calculatePayloadSize(payload: TracePayload | OptimizedTracePayload): number {
-	return new TextEncoder().encode(JSON.stringify(payload)).length;
+  return new TextEncoder().encode(JSON.stringify(payload)).length;
 }
 
 export function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function getPayloadSizeWarning(sizeBytes: number): string | null {
-	const sizeMB = sizeBytes / (1024 * 1024);
-	if (sizeMB > MAX_PAYLOAD_SIZE_MB * 0.8) {
-		return `Warning: Payload size (${formatBytes(sizeBytes)}) is close to the ${MAX_PAYLOAD_SIZE_MB}MB limit. Consider reducing target nodes.`;
-	}
-	return null;
+  const sizeMB = sizeBytes / (1024 * 1024);
+  if (sizeMB > MAX_PAYLOAD_SIZE_MB * 0.8) {
+    return `Warning: Payload size (${formatBytes(sizeBytes)}) is close to the ${MAX_PAYLOAD_SIZE_MB}MB limit. Consider reducing target nodes.`;
+  }
+  return null;
 }
 
 export async function sendTrace(
-	node: IExecuteFunctions,
-	serverUrl: string,
-	apiKey: string,
-	payload: TracePayload | OptimizedTracePayload,
-	timeout: number,
-	requestId?: string,
+  node: IExecuteFunctions,
+  serverUrl: string,
+  apiKey: string,
+  payload: TracePayload | OptimizedTracePayload,
+  timeout: number,
+  requestId?: string,
 ): Promise<MiboSuccessResponse> {
-	const headers: IDataObject = {
-		'x-api-key': apiKey,
-		'Content-Type': 'application/json',
-	};
+  const headers: IDataObject = {
+    'x-api-key': apiKey,
+    'Content-Type': 'application/json',
+  };
 
-	if (requestId) {
-		headers['x-request-id'] = requestId;
-	}
+  if (requestId) {
+    headers['x-request-id'] = requestId;
+  }
 
-	const jsonString = JSON.stringify(payload);
-	const payloadSize = Buffer.byteLength(jsonString, 'utf8');
-	const useCompression = payloadSize > GZIP_THRESHOLD_BYTES;
-	if (useCompression) {
-		const compressed = gzipSync(jsonString);
-		headers['Content-Encoding'] = 'gzip';
-		headers['Content-Type'] = 'application/octet-stream';
-		return node.helpers.httpRequest({
-			method: 'POST' as IHttpRequestMethods,
-			url: `${serverUrl}/traces`,
-			headers,
-			body: compressed,
-			json: false,
-			timeout,
-		});
-	}
+  const jsonString = JSON.stringify(payload);
+  const payloadSize = Buffer.byteLength(jsonString, 'utf8');
+  const useCompression = payloadSize > GZIP_THRESHOLD_BYTES;
+  if (useCompression) {
+    const compressed = gzipSync(jsonString);
+    headers['Content-Encoding'] = 'gzip';
+    headers['Content-Type'] = 'application/octet-stream';
+    return node.helpers.httpRequest({
+      method: 'POST' as IHttpRequestMethods,
+      url: `${serverUrl}/traces`,
+      headers,
+      body: compressed,
+      json: false,
+      timeout,
+    });
+  }
 
-	return node.helpers.httpRequest({
-		method: 'POST' as IHttpRequestMethods,
-		url: `${serverUrl}/traces`,
-		headers,
-		body: payload,
-		json: true,
-		timeout,
-	});
+  return node.helpers.httpRequest({
+    method: 'POST' as IHttpRequestMethods,
+    url: `${serverUrl}/traces`,
+    headers,
+    body: payload,
+    json: true,
+    timeout,
+  });
 }
