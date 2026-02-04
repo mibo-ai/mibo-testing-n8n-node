@@ -10,7 +10,8 @@ import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import type { NodeOptions } from './types';
 import { DEFAULT_SERVER_URL, DEFAULT_TIMEOUT_SECONDS } from './constants';
 import { isValidUUID, normalizeServerUrl, findRequestIdInData } from './utils';
-import { buildMetadata, buildTracePayload } from './builders';
+import { buildMetadata, buildTracePayload, buildOptimizedTracePayload } from './builders';
+import type { NodeDataInput } from './types';
 import { sendTrace, parseErrorResponse, calculatePayloadSize, formatBytes, getPayloadSizeWarning } from './mibo-client';
 
 export class MiboTesting implements INodeType {
@@ -208,6 +209,8 @@ export class MiboTesting implements INodeType {
 
 		const useGetWorkflow = this.getNodeParameter('useGetWorkflow', 0, false) as boolean;
 		let targetNodes: string[] = [];
+		const nodeTypeMap: Record<string, string> = {};
+
 		if (useGetWorkflow) {
 			const nodeFilterPreset = this.getNodeParameter('nodeFilterPreset', 0, 'all') as string;
 			const inputNodes = items[0]?.json?.nodes as Array<{ name: string; type: string }> | undefined;
@@ -221,6 +224,16 @@ export class MiboTesting implements INodeType {
 				);
 			}
 
+			const filteredInputNodes = inputNodes.filter(n => {
+				const nodeType = n.type?.toLowerCase() || '';
+				if (nodeType.includes('stickynote') || nodeType === 'custom.mibotesting') {
+					return false;
+				}
+
+				nodeTypeMap[n.name] = n.type || 'unknown';
+				return true;
+			});
+
 			if (nodeFilterPreset === 'custom') {
 				const customTargetNodes = this.getNodeParameter('customTargetNodes', 0, '') as string;
 				targetNodes = customTargetNodes
@@ -228,19 +241,19 @@ export class MiboTesting implements INodeType {
 					.map(name => name.trim())
 					.filter(name => name.length > 0);
 			} else {
-				let filteredNodes = inputNodes;
+				let filteredNodes = filteredInputNodes;
 				switch (nodeFilterPreset) {
 					case 'ai':
-						filteredNodes = inputNodes.filter(n => n.name.toLowerCase().includes('ai'));
+						filteredNodes = filteredInputNodes.filter(n => n.name.toLowerCase().includes('ai'));
 						break;
 					case 'http':
-						filteredNodes = inputNodes.filter(n => {
+						filteredNodes = filteredInputNodes.filter(n => {
 							const nodeType = n.type?.split('.').pop()?.toLowerCase() || '';
 							return ['httprequest', 'webhook'].includes(nodeType);
 						});
 						break;
 					case 'excludeUtility':
-						filteredNodes = inputNodes.filter(n => {
+						filteredNodes = filteredInputNodes.filter(n => {
 							const nodeType = n.type?.split('.').pop()?.toLowerCase() || '';
 							return !['set', 'if', 'merge', 'switch'].includes(nodeType);
 						});
@@ -303,7 +316,7 @@ export class MiboTesting implements INodeType {
 		);
 
 		const proxy = this.getWorkflowDataProxy(0);
-		const nodesData: IDataObject[] = [];
+		const nodesData: NodeDataInput[] = [];
 		const nodesNotFound: string[] = [];
 		const nodesNotExecuted: string[] = [];
 
@@ -357,6 +370,8 @@ export class MiboTesting implements INodeType {
 				continue;
 			}
 
+			const nodeType = nodeTypeMap[nodeName] || 'unknown';
+
 			try {
 				const nodeItems = proxy.$items(nodeName);
 				if (nodeItems && nodeItems.length > 0) {
@@ -372,12 +387,14 @@ export class MiboTesting implements INodeType {
 					nodesData.push({
 						nodeName,
 						items: nodeItemsData,
+						type: nodeType,
 					});
 				} else {
 					nodesNotExecuted.push(nodeName);
 					nodesData.push({
 						nodeName,
 						items: [],
+						type: nodeType,
 						_notExecuted: true,
 					});
 				}
@@ -387,6 +404,7 @@ export class MiboTesting implements INodeType {
 					nodesData.push({
 						nodeName,
 						items: [nodeJson],
+						type: nodeType,
 					});
 
 					if (!requestId) {
@@ -397,6 +415,7 @@ export class MiboTesting implements INodeType {
 					nodesData.push({
 						nodeName,
 						items: [],
+						type: nodeType,
 						_notExecuted: true,
 					});
 				}
@@ -413,14 +432,24 @@ export class MiboTesting implements INodeType {
 			);
 		}
 
-		const tracePayload = buildTracePayload(
-			inputData,
-			workflowId,
-			metadata,
-			platformId,
-			externalId || '',
-			nodesData,
-		);
+		// Use optimized trace format when using Get Workflow mode
+		const tracePayload = useGetWorkflow
+			? buildOptimizedTracePayload(
+					nodesData,
+					workflowId,
+					workflowName,
+					timestamp,
+					platformId,
+					includeMetadata ? metadata : undefined,
+				)
+			: buildTracePayload(
+					inputData,
+					workflowId,
+					metadata,
+					platformId,
+					externalId || '',
+					nodesData,
+				);
 
 		const serverUrl = normalizeServerUrl(
 			options.serverUrl || credentials.serverUrl as string || DEFAULT_SERVER_URL

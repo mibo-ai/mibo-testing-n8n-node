@@ -29,10 +29,17 @@ export interface MiboSuccessResponse {
 	timestamp: string;
 }
 
+export interface NodeDataInput {
+	nodeName: string;
+	items: IDataObject[];
+	type?: string;
+	_notExecuted?: boolean;
+}
+
 export interface TracePayload {
 	data: {
 		input: IDataObject[];
-		nodes?: IDataObject[];
+		nodes?: NodeDataInput[];
 	};
 	externalMetadata: {
 		workflowId: string;
@@ -51,4 +58,22 @@ export interface MetadataFields {
 	environment?: string;
 	version?: string;
 	additionalFields?: string | IDataObject;
+}
+
+export interface OptimizedNodeData {
+	output: IDataObject | IDataObject[];
+	type: string;
+	status: 'success' | 'skipped';
+}
+
+export interface OptimizedTracePayload {
+	status: 'success' | 'partial';
+	data: Record<string, OptimizedNodeData>;
+	metadata: {
+		workflow_id: string;
+		workflow_name: string;
+		timestamp: string;
+		[key: string]: unknown;
+	};
+	platformId?: string;
 }

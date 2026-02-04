@@ -1,6 +1,6 @@
 import { gzipSync } from 'zlib';
 import type { IExecuteFunctions, IDataObject, IHttpRequestMethods } from 'n8n-workflow';
-import type { MiboSuccessResponse, MiboErrorResponse, TracePayload } from './types';
+import type { MiboSuccessResponse, MiboErrorResponse, TracePayload, OptimizedTracePayload } from './types';
 import { ERROR_CODES, MAX_PAYLOAD_SIZE_MB, GZIP_THRESHOLD_BYTES } from './constants';
 
 export function parseErrorResponse(error: unknown): string {
@@ -41,7 +41,7 @@ export function parseErrorResponse(error: unknown): string {
 	return err.message || 'Unknown error while sending the trace';
 }
 
-export function calculatePayloadSize(payload: TracePayload): number {
+export function calculatePayloadSize(payload: TracePayload | OptimizedTracePayload): number {
 	return new TextEncoder().encode(JSON.stringify(payload)).length;
 }
 
@@ -63,7 +63,7 @@ export async function sendTrace(
 	node: IExecuteFunctions,
 	serverUrl: string,
 	apiKey: string,
-	payload: TracePayload,
+	payload: TracePayload | OptimizedTracePayload,
 	timeout: number,
 	requestId?: string,
 ): Promise<MiboSuccessResponse> {

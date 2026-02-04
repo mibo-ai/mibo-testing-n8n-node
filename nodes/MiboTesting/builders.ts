@@ -1,6 +1,6 @@
 import type { IExecuteFunctions, IDataObject } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
-import type { TracePayload, MetadataFields } from './types';
+import type { TracePayload, MetadataFields, OptimizedTracePayload, OptimizedNodeData, NodeDataInput } from './types';
 
 export function buildMetadata(
 	workflowId: string,
@@ -57,7 +57,7 @@ export function buildTracePayload(
 	metadata: IDataObject,
 	platformId: string,
 	externalId: string,
-	nodesData?: IDataObject[],
+	nodesData?: NodeDataInput[],
 ): TracePayload {
 	const payload: TracePayload = {
 		data: {
@@ -79,6 +79,53 @@ export function buildTracePayload(
 
 	if (externalId) {
 		payload.externalId = externalId;
+	}
+
+	return payload;
+}
+
+export function buildOptimizedTracePayload(
+	nodesData: NodeDataInput[],
+	workflowId: string,
+	workflowName: string,
+	timestamp: string,
+	platformId?: string,
+	extraMetadata?: IDataObject,
+): OptimizedTracePayload {
+	const data: Record<string, OptimizedNodeData> = {};
+	let hasSkipped = false;
+
+	for (const node of nodesData) {
+		if (node._notExecuted) {
+			hasSkipped = true;
+			data[node.nodeName] = {
+				output: {},
+				type: node.type || 'unknown',
+				status: 'skipped',
+			};
+		} else {
+			const output = node.items.length === 1 ? node.items[0] : node.items;
+			data[node.nodeName] = {
+				output,
+				type: node.type || 'unknown',
+				status: 'success',
+			};
+		}
+	}
+
+	const payload: OptimizedTracePayload = {
+		status: hasSkipped ? 'partial' : 'success',
+		data,
+		metadata: {
+			workflow_id: workflowId,
+			workflow_name: workflowName,
+			timestamp,
+			...extraMetadata,
+		},
+	};
+
+	if (platformId) {
+		payload.platformId = platformId;
 	}
 
 	return payload;
