@@ -109,6 +109,14 @@ export class MiboTesting implements INodeType {
 				},
 			},
 			{
+				displayName: 'Request ID',
+				name: 'requestId',
+				type: 'string',
+				default: '',
+				description: 'The x-request-id for correlating this trace with n8n executions. Required for active testing when triggered via HTTP/Webhook. Use expression: {{ $("Webhook").item.json.headers["x-request-id"] }}',
+				placeholder: '={{ $("Webhook").item.json.headers["x-request-id"] }}',
+			},
+			{
 				displayName: 'Platform ID',
 				name: 'platformId',
 				type: 'string',
@@ -276,7 +284,6 @@ export class MiboTesting implements INodeType {
 			);
 		}
 
-
 		const workflowData = this.getWorkflow();
 		const workflowId = workflowData.id || 'unknown';
 		const workflowName = workflowData.name || 'Unnamed Workflow';
@@ -285,6 +292,7 @@ export class MiboTesting implements INodeType {
 		const metadataConfig = includeMetadata
 			? this.getNodeParameter('metadata', 0, {}) as IDataObject
 			: {};
+
 		const metadata = buildMetadata(
 			workflowId,
 			workflowName,
@@ -298,12 +306,46 @@ export class MiboTesting implements INodeType {
 		const nodesData: IDataObject[] = [];
 		const nodesNotFound: string[] = [];
 		const nodesNotExecuted: string[] = [];
-		let requestId: string | undefined;
 
-		for (const item of items) {
-			requestId = findRequestIdInData(item.json as IDataObject);
-			if (requestId) {
-				break;
+		const manualRequestId = this.getNodeParameter('requestId', 0, '') as string;
+		let requestId: string | undefined = manualRequestId || undefined;
+
+		if (!requestId) {
+			for (const item of items) {
+				requestId = findRequestIdInData(item.json as IDataObject);
+				if (requestId) {
+					break;
+				}
+			}
+		}
+
+		if (!requestId && useGetWorkflow) {
+			const inputNodes = items[0]?.json?.nodes as Array<{ name: string; type: string }> | undefined;
+			if (inputNodes) {
+				const webhookNodes = inputNodes.filter(n => {
+					const nodeType = n.type?.split('.').pop()?.toLowerCase() || '';
+					return nodeType === 'webhook';
+				});
+
+				for (const webhookNode of webhookNodes) {
+					try {
+						const webhookItems = proxy.$items(webhookNode.name);
+						if (webhookItems && webhookItems.length > 0) {
+							for (const webhookItem of webhookItems) {
+								requestId = findRequestIdInData(webhookItem.json as IDataObject);
+								if (requestId) {
+									break;
+								}
+							}
+						}
+					} catch {
+						// Webhook node not executed in this branch
+					}
+					
+					if (requestId) {
+						break;
+					}
+				}
 			}
 		}
 
@@ -404,6 +446,7 @@ export class MiboTesting implements INodeType {
 					sent: true,
 					traceId: response?.data?.id || 'unknown',
 					platformId: platformId || 'resolved-from-api-key',
+					requestId: requestId || null,
 					timestamp,
 					nodesCollected: nodesData.filter(n => !n._notExecuted).length,
 					targetNodes: targetNodes,
@@ -439,6 +482,7 @@ export class MiboTesting implements INodeType {
 								sent: false,
 								error: errorMessage,
 								platformId: platformId || 'unknown',
+								requestId: requestId || null,
 								timestamp,
 								targetNodes: targetNodes,
 								payloadSize: payloadSizeFormatted,

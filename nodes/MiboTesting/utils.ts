@@ -24,7 +24,9 @@ function extractRequestIdFromHeaders(headers: IDataObject | undefined): string |
 export function findRequestIdInData(data: IDataObject): string | undefined {
 	if (data.headers) {
 		const requestId = extractRequestIdFromHeaders(data.headers as IDataObject);
-		if (requestId) return requestId;
+		if (requestId) {
+			return requestId;
+		}
 	}
 
 	for (const value of Object.values(data)) {
