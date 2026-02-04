@@ -11,7 +11,7 @@ import { gzipSync } from 'zlib';
 import { ERROR_CODES, GZIP_THRESHOLD_BYTES, MAX_PAYLOAD_SIZE_MB } from './constants';
 
 export function parseErrorResponse(error: unknown): string {
-  const err = error as { message?: string; response?: { data?: MiboErrorResponse }; };
+  const err = error as { message?: string; response?: { data?: MiboErrorResponse } };
   const errorData = err.response?.data;
   const errorMessage = err.message?.toLowerCase() || '';
 

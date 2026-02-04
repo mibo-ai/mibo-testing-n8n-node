@@ -6,6 +6,17 @@ export const MAX_PAYLOAD_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 export const MAX_PAYLOAD_SIZE_MB = 10;
 export const GZIP_THRESHOLD_BYTES = 5 * 1024 * 1024; // 5MB - compress payloads larger than this
 
+export const AUTO_EXCLUDED_NODE_TYPES = [
+  'n8n-nodes-base.stickyNote',
+  'n8n-nodes-base.n8n',
+  'n8n-nodes-base.respondToWebhook',
+  'n8n-nodes-base.noOp',
+  'n8n-nodes-base.wait',
+  'n8n-nodes-base.start',
+  'n8n-nodes-base.manualTrigger',
+  'CUSTOM.miboTesting',
+];
+
 export const ERROR_CODES = {
   MISSING_API_KEY:
     'Missing x-api-key header. Make sure you are sending the API key in the headers.',

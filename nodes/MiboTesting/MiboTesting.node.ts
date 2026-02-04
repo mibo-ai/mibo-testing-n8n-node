@@ -11,7 +11,7 @@ import type {
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 import { buildMetadata, buildOptimizedTracePayload, buildTracePayload } from './builders';
-import { DEFAULT_SERVER_URL, DEFAULT_TIMEOUT_SECONDS } from './constants';
+import { AUTO_EXCLUDED_NODE_TYPES, DEFAULT_SERVER_URL, DEFAULT_TIMEOUT_SECONDS } from './constants';
 import {
   calculatePayloadSize,
   formatBytes,
@@ -234,8 +234,7 @@ export class MiboTesting implements INodeType {
       }
 
       const filteredInputNodes = inputNodes.filter((n) => {
-        const nodeType = n.type?.toLowerCase() || '';
-        if (nodeType.includes('stickynote') || nodeType === 'custom.mibotesting') {
+        if (AUTO_EXCLUDED_NODE_TYPES.includes(n.type)) {
           return false;
         }
 
