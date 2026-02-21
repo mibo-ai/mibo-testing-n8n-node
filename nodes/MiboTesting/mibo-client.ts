@@ -91,7 +91,7 @@ export async function sendTrace(
     headers['Content-Type'] = 'application/octet-stream';
     return node.helpers.httpRequest({
       method: 'POST' as IHttpRequestMethods,
-      url: `${serverUrl}/traces`,
+      url: `${serverUrl}/public/traces`,
       headers,
       body: compressed,
       json: false,
@@ -101,7 +101,7 @@ export async function sendTrace(
 
   return node.helpers.httpRequest({
     method: 'POST' as IHttpRequestMethods,
-    url: `${serverUrl}/traces`,
+    url: `${serverUrl}/public/traces`,
     headers,
     body: payload,
     json: true,
