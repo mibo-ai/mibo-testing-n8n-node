@@ -21,7 +21,10 @@
     "url": "https://github.com/mibo-testing/n8n-nodes-mibo-testing.git"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0",
+    "pnpm": ">=10.0.0",
+    "npm": "please-use-pnpm",
+    "yarn": "please-use-pnpm"
   },
   "scripts": {
     "build": "tsc && pnpm run copy:icons",
