@@ -49,7 +49,7 @@ function build() {
   log.info('Building...');
 
   try {
-    execSync('npm run build', { cwd: ROOT, stdio: 'pipe' });
+    execSync('pnpm run build', { cwd: ROOT, stdio: 'pipe' });
     log.info('Build complete - changes will be picked up by n8n');
     isBuilding = false;
     return true;

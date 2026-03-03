@@ -3,9 +3,9 @@
  * Development script for local development
  *
  * Prerequisites:
- *   npm install -g n8n
- *   npm run dev:link  (runs: npm run build && npm link)
- *   cd ~/.n8n && npm link n8n-nodes-mibo-testing
+ *   pnpm add -g n8n
+ *   pnpm run dev:link  (runs: pnpm run build && pnpm link)
+ *   cd ~/.n8n && pnpm link n8n-nodes-mibo-testing
  *
  * This script:
  *   1. Builds the project
@@ -51,7 +51,7 @@ function build() {
   log.info('Building...');
 
   try {
-    execSync('npm run build', { cwd: ROOT, stdio: 'pipe' });
+    execSync('pnpm run build', { cwd: ROOT, stdio: 'pipe' });
     log.info('Build complete');
     isBuilding = false;
     return true;
@@ -99,7 +99,7 @@ function startN8n() {
 
   n8nProcess.on('error', (err) => {
     log.error({ err }, 'Failed to start n8n');
-    log.warn('Make sure n8n is installed globally: npm install -g n8n');
+    log.warn('Make sure n8n is installed globally: pnpm add -g n8n');
   });
 }
 
@@ -159,9 +159,9 @@ log.info('='.repeat(50));
 log.info('Mibo Testing n8n Node - Local Dev');
 log.info('='.repeat(50));
 log.info('Prerequisites:');
-log.info('  1. npm install -g n8n');
-log.info('  2. npm run dev:link');
-log.info('  3. cd ~/.n8n && npm link n8n-nodes-mibo-testing');
+log.info('  1. pnpm add -g n8n');
+log.info('  2. pnpm run dev:link');
+log.info('  3. cd ~/.n8n && pnpm link n8n-nodes-mibo-testing');
 log.info('='.repeat(50));
 
 if (build()) {

@@ -5,7 +5,7 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make install     - Install dependencies"
-	@echo "  make dev         - Local dev (requires: npm i -g n8n)"
+	@echo "  make dev         - Local dev (requires: pnpm add -g n8n)"
 	@echo "  make dev-docker  - Docker dev (auto hot-reload)"
 	@echo ""
 	@echo "Build:"
@@ -18,25 +18,25 @@ help:
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make clean       - Remove dist and node_modules"
-	@echo "  make link        - Build and npm link for local n8n"
+	@echo "  make link        - Build and pnpm link for local n8n"
 
 install:
-	npm install
+	pnpm install
 
 build:
-	npm run build
+	pnpm run build
 
 dev:
-	npm run dev
+	pnpm run dev
 
 dev-docker:
-	npm run dev:docker
+	pnpm run dev:docker
 
 lint:
-	npm run lint
+	pnpm run lint
 
 lint-fix:
-	npm run lint:fix
+	pnpm run lint:fix
 
 docker-build:
 	docker build -t n8n-mibo-testing:latest .
@@ -45,6 +45,6 @@ clean:
 	rm -rf dist node_modules .last_build
 
 link:
-	npm run build && npm link
+	pnpm run build && pnpm link
 	@echo ""
-	@echo "Now run: cd ~/.n8n && npm link n8n-nodes-mibo-testing"
+	@echo "Now run: cd ~/.n8n && pnpm link n8n-nodes-mibo-testing"

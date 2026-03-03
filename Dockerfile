@@ -2,16 +2,17 @@ FROM node:20-alpine AS builder
 
 WORKDIR /build
 
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY tsconfig.json ./
 COPY nodes/ ./nodes/
 COPY credentials/ ./credentials/
 COPY scripts/copy-icons.mjs ./scripts/
 
-RUN npm run build
-RUN npm prune --production
+RUN pnpm run build
+RUN pnpm prune --prod
 
 FROM n8nio/n8n:latest
 
@@ -25,6 +26,7 @@ COPY --from=builder /build/node_modules ${NODE_PATH}/node_modules
 
 WORKDIR ${NODE_PATH}
 RUN npm link
+# npm link is used here intentionally — n8n's global resolution requires npm link, not pnpm
 
 ENV N8N_LISTEN_ADDRESS=0.0.0.0
 ENV N8N_PROTOCOL=https
