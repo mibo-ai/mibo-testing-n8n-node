@@ -3,7 +3,7 @@ node_modules/
 .DS_Store
 .git/
 .github/
-eslint.config.mjs
+biome.json
 tsconfig.json
 gulpfile.js
 Dockerfile

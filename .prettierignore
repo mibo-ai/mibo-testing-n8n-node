@@ -1,6 +1,0 @@
-.claude_shared
-.claude.md
-.agents
-dist
-node_modules
-*.md
