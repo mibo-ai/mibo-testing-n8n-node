@@ -1,14 +1,12 @@
+import { gzipSync } from 'node:zlib';
+import type { IDataObject, IExecuteFunctions, IHttpRequestMethods } from 'n8n-workflow';
+import { ERROR_CODES, GZIP_THRESHOLD_BYTES, MAX_PAYLOAD_SIZE_MB } from './constants';
 import type {
   MiboErrorResponse,
   MiboSuccessResponse,
   OptimizedTracePayload,
   TracePayload,
 } from './types';
-import type { IDataObject, IExecuteFunctions, IHttpRequestMethods } from 'n8n-workflow';
-
-import { gzipSync } from 'zlib';
-
-import { ERROR_CODES, GZIP_THRESHOLD_BYTES, MAX_PAYLOAD_SIZE_MB } from './constants';
 
 export function parseErrorResponse(error: unknown): string {
   const err = error as { message?: string; response?: { data?: MiboErrorResponse } };

@@ -1,5 +1,3 @@
-import type { NodeOptions } from './types';
-import type { NodeDataInput } from './types';
 import type {
   IDataObject,
   IExecuteFunctions,
@@ -7,9 +5,7 @@ import type {
   INodeType,
   INodeTypeDescription,
 } from 'n8n-workflow';
-
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-
 import { buildMetadata, buildOptimizedTracePayload, buildTracePayload } from './builders';
 import { AUTO_EXCLUDED_NODE_TYPES, DEFAULT_SERVER_URL, DEFAULT_TIMEOUT_SECONDS } from './constants';
 import {
@@ -19,6 +15,7 @@ import {
   parseErrorResponse,
   sendTrace,
 } from './mibo-client';
+import type { NodeDataInput, NodeOptions } from './types';
 import { findRequestIdInData, isValidUUID, normalizeServerUrl } from './utils';
 
 export class MiboTesting implements INodeType {

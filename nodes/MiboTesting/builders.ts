@@ -1,3 +1,5 @@
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import type {
   MetadataFields,
   NodeDataInput,
@@ -5,9 +7,6 @@ import type {
   OptimizedTracePayload,
   TracePayload,
 } from './types';
-import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
-
-import { NodeOperationError } from 'n8n-workflow';
 
 export function buildMetadata(
   workflowId: string,
