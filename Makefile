@@ -1,4 +1,4 @@
-.PHONY: help install build dev dev-docker lint clean
+.PHONY: help install build dev dev-docker check clean
 
 help:
 	@echo "Mibo Testing n8n Node"
@@ -10,8 +10,8 @@ help:
 	@echo ""
 	@echo "Build:"
 	@echo "  make build       - Build TypeScript"
-	@echo "  make lint        - Run linter"
-	@echo "  make lint-fix    - Run linter with auto-fix"
+	@echo "  make check       - Run linter and formatter"
+	@echo "  make check-fix   - Run linter and formatter with auto-fix"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-build - Build production image"
@@ -32,11 +32,11 @@ dev:
 dev-docker:
 	pnpm run dev:docker
 
-lint:
-	pnpm run lint
+check:
+	pnpm run check
 
-lint-fix:
-	pnpm run lint:fix
+check-fix:
+	pnpm run check:fix
 
 docker-build:
 	docker build -t n8n-mibo-testing:latest .
