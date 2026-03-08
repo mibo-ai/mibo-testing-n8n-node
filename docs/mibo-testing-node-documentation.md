@@ -24,17 +24,31 @@ The MiboTesting node captures execution data from your n8n workflow and sends it
 
 ---
 
-## Get Workflow Mode (Recommended)
+## Auto-detect Mode (Recommended)
 
 ### How It Works
 
-1. Connect an n8n "Get Workflow" node before the MiboTesting node
-2. MiboTesting reads the workflow definition from the input
-3. Based on your filter settings, it identifies which nodes to capture
-4. It captures execution data from those nodes with their n8n types
-5. Sends an **optimized trace** to the API
+1. MiboTesting fetches the workflow definition from the n8n API (if n8n API credentials are configured), or reads it from an upstream "Get Workflow" node as fallback
+2. Based on your filter settings, it identifies which nodes to capture
+3. It captures execution data from those nodes with their n8n types
+4. Sends an **optimized trace** to the API
 
 ### Setup
+
+**Option A: n8n API credentials (recommended, no extra node needed)**
+
+1. In your Mibo Testing credential, fill in the **n8n API Key** and **n8n Base URL** fields
+2. Add the MiboTesting node to your workflow
+3. Enable "Auto-detect Workflow Nodes" toggle
+4. Select a node filter preset
+
+```
+[Trigger] → [Your Nodes] → [MiboTesting]
+```
+
+**Option B: Fallback with "Get Workflow" node**
+
+If you don't configure n8n API credentials, connect a "Get Workflow" node before MiboTesting:
 
 ```
 [Get Workflow] → [MiboTesting]
@@ -42,8 +56,8 @@ The MiboTesting node captures execution data from your n8n workflow and sends it
 
 1. Add a "Get Workflow" node and configure it to get the current workflow
 2. Connect it to the MiboTesting node
-3. Enable "Use Get Workflow Node" toggle
-4. Select a node filter preset or use custom
+3. Enable "Auto-detect Workflow Nodes" toggle
+4. Select a node filter preset
 
 ### Node Filter Presets
 
@@ -156,7 +170,7 @@ Only present on AI agent nodes that invoke tools. Simple LLM calls (e.g., Google
 ### Setup
 
 1. Add MiboTesting node anywhere in your workflow
-2. Leave "Use Get Workflow Node" disabled
+2. Leave "Auto-detect Workflow Nodes" disabled
 3. Enter node names separated by commas: `Webhook, HTTP Request, AI Agent`
 
 ### When to Use This Mode
