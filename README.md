@@ -36,7 +36,7 @@ Create a new credential of type **Mibo Testing API** with the following fields:
 | Field | Required | Description |
 |-------|----------|-------------|
 | **API Key** | Yes | Your Mibo Testing API key. Find it in your Mibo Testing dashboard under **Settings > API Keys**. |
-| **n8n API Key** | No | Your n8n instance API key. Enables automatic workflow node detection without needing a separate "Get Workflow" node. To create one: open n8n, go to **Settings > API**, and click **Create an API Key**. |
+| **n8n API Key** | No | Your n8n instance API key. Enables automatic workflow node detection without needing a separate "Get Workflow" node. To create one: open n8n, go to **Settings > API**, and click **Create an API Key**. The key only needs the **workflow:read** scope. |
 | **n8n Base URL** | No | The URL where your n8n instance is running. Examples: `http://localhost:5678` for local setups, `https://your-n8n.example.com` for self-hosted, or your n8n Cloud URL. |
 
 ### Node Setup

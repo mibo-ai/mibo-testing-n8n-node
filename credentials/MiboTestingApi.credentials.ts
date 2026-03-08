@@ -29,7 +29,7 @@ export class MiboTestingApi implements ICredentialType {
       typeOptions: { password: true },
       default: '',
       description:
-        'Your n8n instance API key. This allows Mibo Testing to automatically read your workflow structure without needing an extra "Get Workflow" node. To create one: open your n8n instance, go to Settings > API, and click "Create an API Key".',
+        'Your n8n instance API key. This allows Mibo Testing to automatically read your workflow structure without needing an extra "Get Workflow" node. To create one: open your n8n instance, go to Settings > API, and click "Create an API Key". The key only needs the "workflow:read" scope.',
     },
     {
       displayName: 'n8n Base URL (Optional)',

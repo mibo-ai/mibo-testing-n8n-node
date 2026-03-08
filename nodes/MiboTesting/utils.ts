@@ -33,7 +33,7 @@ export async function fetchWorkflowNodes(
     if (!nodes || !Array.isArray(nodes)) {
       throw new NodeOperationError(node.getNode(), 'Unexpected response from n8n API', {
         description:
-          'The n8n API did not return a valid list of workflow nodes. Please verify that your n8n API Key has permission to read workflows and that the workflow exists.',
+          'The n8n API did not return a valid list of workflow nodes. Please verify that your n8n API Key has the "workflow:read" scope and that the workflow exists.',
       });
     }
 
