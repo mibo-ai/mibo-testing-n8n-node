@@ -40,16 +40,9 @@ scripts/
 - **Request ID correlation**: Auto-detects `x-request-id` from webhook headers for active testing
 - **Node filtering**: Preset filters (all, ai-only, http-only, exclude-utility, custom)
 
-## Coding Standards
+## Rules
 
-- **Language:** English only (code, comments, commits)
-- **Package Manager:** pnpm only
-- **Linter/Formatter:** Biome (single quotes, trailing commas, semicolons, 2-space indent, 100 char line width, sort importing)
-- **TypeScript:** Strict mode, ES2022 target, CommonJS modules (n8n requirement)
-- **No `any`:** Use proper types. n8n types: `IDataObject`, `INodeExecutionData`, `IExecuteFunctions`
-- **Error handling:** Always use `NodeOperationError` with descriptive `description` field
-- **Pure functions:** Builders and utils are pure — no side effects, no input mutation
-- **File naming:** PascalCase for classes (`MiboTesting.node.ts`), camelCase for utilities
+See @AGENTS.md for coding standards, testing patterns, interaction protocol, and sensitive files.
 
 ## Commands
 
@@ -62,22 +55,3 @@ scripts/
 | `pnpm test:watch` | Tests in watch mode |
 | `pnpm run check` | Biome lint + format check |
 | `pnpm run check:fix` | Auto-fix lint/format |
-
-## Testing
-
-- **Framework:** Vitest
-- **Pattern:** Mock `sendTrace` at module level, create parametrizable `IExecuteFunctions` mocks
-- **Coverage areas:** Node execution (manual + auto-detect modes), payload builders, HTTP client, utilities
-- **Mock factory:** `createMockExecuteFunctions(overrides)` — allows per-test parameter overrides
-
-## Sensitive Files
-
-- **NEVER read `.env` files** — they may contain API keys and secrets. Only read `.env.example`.
-
-## AI Assistant Guidelines
-
-- Prefer simple solutions. Don't over-abstract.
-- Fix type errors at the source, never bypass with ignores.
-- Ask confirmation before major refactors (deleting files, changing architecture).
-- Keep the passthrough design — never modify workflow data, only append `_miboTrace`.
-- Always before finishing a plan insert in CHANGELOG.md whats new in the current or new version.
