@@ -32,13 +32,12 @@ export class MiboTestingApi implements ICredentialType {
         'Your n8n instance API key. This allows Mibo Testing to automatically read your workflow structure without needing an extra "Get Workflow" node. To create one: open your n8n instance, go to Settings > API, and click "Create an API Key". The key only needs the "workflow:read" scope.',
     },
     {
-      displayName: 'n8n Base URL (Optional)',
+      displayName: 'n8n API URL',
       name: 'n8nBaseUrl',
       type: 'string',
-      default: '',
-      placeholder: 'http://localhost:5678',
+      default: 'http://localhost:5678/api/v1',
       description:
-        'The URL where your n8n instance is running. Examples: "http://localhost:5678" for local setups, "https://your-n8n.example.com" for self-hosted, or your n8n Cloud URL.',
+        'The URL of your n8n Public API. The default works for most self-hosted setups. Change it if your n8n runs on a different port or domain. If left empty, the node will attempt to auto-detect it from your n8n environment.',
     },
   ];
 

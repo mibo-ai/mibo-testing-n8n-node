@@ -11,6 +11,24 @@ export function normalizeServerUrl(url: string): string {
   return url.trim().replace(/\/+$/, '');
 }
 
+export function resolveN8nBaseUrl(credentialValue: string): string {
+  if (credentialValue) {
+    return credentialValue;
+  }
+
+  let base: string;
+  if (process.env.WEBHOOK_URL) {
+    base = process.env.WEBHOOK_URL.replace(/\/+$/, '');
+  } else {
+    const protocol = process.env.N8N_PROTOCOL || 'http';
+    const host = process.env.N8N_HOST || 'localhost';
+    const port = process.env.N8N_PORT || '5678';
+    base = `${protocol}://${host}:${port}`;
+  }
+
+  return `${base}/api/v1`;
+}
+
 export async function fetchWorkflowNodes(
   node: IExecuteFunctions,
   n8nBaseUrl: string,
@@ -22,7 +40,7 @@ export async function fetchWorkflowNodes(
   try {
     const response = await node.helpers.httpRequest({
       method: 'GET',
-      url: `${baseUrl}/api/v1/workflows/${workflowId}`,
+      url: `${baseUrl}/workflows/${workflowId}`,
       headers: {
         'X-N8N-API-KEY': n8nApiKey,
       },

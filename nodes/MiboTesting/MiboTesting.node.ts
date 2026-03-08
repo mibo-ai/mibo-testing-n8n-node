@@ -16,7 +16,13 @@ import {
   sendTrace,
 } from './mibo-client';
 import type { NodeDataInput, NodeOptions } from './types';
-import { fetchWorkflowNodes, findRequestIdInData, isValidUUID, normalizeServerUrl } from './utils';
+import {
+  fetchWorkflowNodes,
+  findRequestIdInData,
+  isValidUUID,
+  normalizeServerUrl,
+  resolveN8nBaseUrl,
+} from './utils';
 
 export class MiboTesting implements INodeType {
   description: INodeTypeDescription = {
@@ -223,9 +229,9 @@ export class MiboTesting implements INodeType {
     if (useGetWorkflow) {
       const nodeFilterPreset = this.getNodeParameter('nodeFilterPreset', 0, 'all') as string;
       const n8nApiKey = (credentials.n8nApiKey as string) || '';
-      const n8nBaseUrl = (credentials.n8nBaseUrl as string) || '';
+      const n8nBaseUrl = resolveN8nBaseUrl((credentials.n8nBaseUrl as string) || '');
       let inputNodes: Array<{ name: string; type: string }>;
-      if (n8nApiKey && n8nBaseUrl) {
+      if (n8nApiKey) {
         inputNodes = await fetchWorkflowNodes(this, n8nBaseUrl, n8nApiKey, workflowId);
         fetchedNodes = inputNodes;
       } else {
@@ -525,7 +531,7 @@ export class MiboTesting implements INodeType {
           {
             description: isPayloadTooLarge
               ? 'Try reducing the number of target nodes or exclude nodes with large data (files, images, etc.)'
-              : 'Check your API key in the Mibo Testing credentials',
+              : 'Check your Mibo Testing API Key (the first field in the credentials). This is NOT the n8n API Key.',
           },
         );
       }
