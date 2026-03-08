@@ -233,7 +233,7 @@ describe('MiboTesting.execute', () => {
         params: { useGetWorkflow: true },
       });
 
-      await expect(node.execute.call(mock)).rejects.toThrow('No workflow nodes found in input data');
+      await expect(node.execute.call(mock)).rejects.toThrow('No workflow nodes found');
     });
   });
 

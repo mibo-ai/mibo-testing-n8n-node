@@ -16,6 +16,7 @@ services:
       - TZ=America/Argentina/Buenos_Aires
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_LOG_LEVEL=debug
+      - MIBO_SERVER_URL=http://host.docker.internal:3000
       - N8N_CUSTOM_EXTENSIONS=/home/node/custom-nodes/n8n-nodes-mibo-testing
     volumes:
       - ./dist:/home/node/custom-nodes/n8n-nodes-mibo-testing/dist:ro
