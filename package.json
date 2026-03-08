@@ -1,5 +1,5 @@
 {
-  "name": "n8n-nodes-mibo-testing",
+  "name": "@mibo-ai/n8n-nodes-mibo-testing",
   "version": "0.2.0",
   "description": "n8n community node for Mibo Testing - Capture and send workflow traces for semantic and procedural testing",
   "license": "GPL-3.0-or-later",
@@ -42,6 +42,9 @@
     "docker:run": "docker compose up -d",
     "test": "vitest run",
     "test:watch": "vitest --watch"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist"
