@@ -1,3 +1,0 @@
-[submodule ".claude-shared"]
-	path = .claude-shared
-	url = git@github.com:Bomi-chatbot/agents-rules-skills.git
