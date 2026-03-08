@@ -139,6 +139,7 @@ export class MiboTesting implements INodeType {
         displayName: 'Include Metadata',
         name: 'includeMetadata',
         type: 'boolean',
+        noDataExpression: true,
         default: false,
         description: 'Whether to include additional metadata with the trace',
       },
