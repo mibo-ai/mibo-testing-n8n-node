@@ -6,10 +6,7 @@
  *   1. Builds the project initially
  *   2. Starts n8n in Docker with the node mounted
  *   3. Watches for source changes
- *   4. Rebuilds on change (no container restart needed - volume mount)
- *
- * The key improvement: mounts ./dist directly, so changes are picked up
- * without restarting the container (just reload the workflow in n8n).
+ *   4. Rebuilds on change and restarts the container so n8n picks up new code
  */
 
 import { spawn, execSync } from 'node:child_process';
@@ -50,13 +47,26 @@ function build() {
 
   try {
     execSync('pnpm run build', { cwd: ROOT, stdio: 'pipe' });
-    log.info('Build complete - changes will be picked up by n8n');
+    log.info('Build complete');
     isBuilding = false;
     return true;
   } catch (error) {
     log.error({ err: error.stdout?.toString() || error.message }, 'Build failed');
     isBuilding = false;
     return false;
+  }
+}
+
+function restartContainer() {
+  log.info('Restarting n8n container to pick up changes...');
+  try {
+    execSync('docker compose -f docker-compose.dev.yml restart n8n', {
+      cwd: ROOT,
+      stdio: 'pipe',
+    });
+    log.info('Container restarted - n8n is reloading');
+  } catch (error) {
+    log.warn({ err: error.message }, 'Failed to restart container');
   }
 }
 
@@ -115,11 +125,14 @@ function setupWatcher() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       log.info({ file: filename }, 'Change detected');
-      build();
+      const success = build();
 
       if (pendingBuild) {
         pendingBuild = false;
-        setTimeout(() => build(), 100);
+        const retrySuccess = build();
+        if (retrySuccess) restartContainer();
+      } else if (success) {
+        restartContainer();
       }
     }, 300);
   };
@@ -159,8 +172,7 @@ log.info('='.repeat(50));
 log.info('Mibo Testing n8n Node - Docker Dev');
 log.info('='.repeat(50));
 log.info('This mode mounts the dist folder directly.');
-log.info('Changes are picked up without restarting the container.');
-log.info('Just reload your workflow in n8n to see changes.');
+log.info('On file changes: rebuilds and restarts the container automatically.');
 log.info('='.repeat(50));
 if (build()) {
   setupWatcher();
