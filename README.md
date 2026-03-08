@@ -2,6 +2,8 @@
 
 n8n community node for **Mibo Testing** - a platform for semantic and procedural testing of AI workflows.
 
+[![npm](https://img.shields.io/npm/v/@mibo-ai/n8n-nodes-mibo-testing)](https://www.npmjs.com/package/@mibo-ai/n8n-nodes-mibo-testing)
+
 ## Features
 
 - **Auto-detect Workflow Nodes**: Automatically discover all nodes in your workflow via the n8n API, or fall back to the "Get Workflow" node
@@ -16,13 +18,13 @@ n8n community node for **Mibo Testing** - a platform for semantic and procedural
 ### Community Nodes (Recommended)
 
 1. Go to **Settings > Community Nodes** in your n8n instance
-2. Search for `n8n-nodes-mibo-testing`
+2. Search for `@mibo-ai/n8n-nodes-mibo-testing`
 3. Click **Install**
 
 ### Manual Installation
 
 ```bash
-npm install n8n-nodes-mibo-testing
+npm install @mibo-ai/n8n-nodes-mibo-testing
 ```
 
 Then restart your n8n instance.
@@ -125,8 +127,8 @@ The node passes through all input data unchanged, adding a `_miboTrace` object t
 ### Setup
 
 ```bash
-git clone https://github.com/mibo-testing/n8n-nodes-mibo-testing.git
-cd n8n-nodes-mibo-testing
+git clone https://github.com/mibo-ai/mibo-testing-n8n-node.git
+cd mibo-testing-n8n-node
 pnpm install
 ```
 
@@ -144,7 +146,7 @@ pnpm add -g n8n
 pnpm run dev:link
 
 # Link to your n8n installation (one time)
-cd ~/.n8n && npm link n8n-nodes-mibo-testing
+cd ~/.n8n && npm link @mibo-ai/n8n-nodes-mibo-testing
 
 # Start development mode (builds, watches, restarts n8n on changes)
 pnpm run dev
