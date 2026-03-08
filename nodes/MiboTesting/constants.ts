@@ -17,6 +17,10 @@ export const AUTO_EXCLUDED_NODE_TYPES = [
   'CUSTOM.miboTesting',
 ];
 
+export function getServerUrl(): string {
+  return process.env.MIBO_SERVER_URL || DEFAULT_SERVER_URL;
+}
+
 export const ERROR_CODES = {
   MISSING_API_KEY:
     'Missing x-api-key header. Make sure you are sending the API key in the headers.',

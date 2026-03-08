@@ -7,7 +7,7 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import { buildMetadata, buildOptimizedTracePayload, buildTracePayload } from './builders';
-import { AUTO_EXCLUDED_NODE_TYPES, DEFAULT_SERVER_URL, DEFAULT_TIMEOUT_SECONDS } from './constants';
+import { AUTO_EXCLUDED_NODE_TYPES, DEFAULT_TIMEOUT_SECONDS, getServerUrl } from './constants';
 import {
   calculatePayloadSize,
   formatBytes,
@@ -16,7 +16,7 @@ import {
   sendTrace,
 } from './mibo-client';
 import type { NodeDataInput, NodeOptions } from './types';
-import { findRequestIdInData, isValidUUID, normalizeServerUrl } from './utils';
+import { fetchWorkflowNodes, findRequestIdInData, isValidUUID, normalizeServerUrl } from './utils';
 
 export class MiboTesting implements INodeType {
   description: INodeTypeDescription = {
@@ -40,12 +40,12 @@ export class MiboTesting implements INodeType {
     ],
     properties: [
       {
-        displayName: 'Use Get Workflow Node',
+        displayName: 'Auto-detect Workflow Nodes',
         name: 'useGetWorkflow',
         type: 'boolean',
         default: false,
         description:
-          'Whether to use n8n\'s "Get Workflow" node to automatically detect nodes. Connect a "Get Workflow" node before this one.',
+          'Automatically detect all nodes in your workflow. If you have configured your n8n API Key and Base URL in the credentials, this works automatically (recommended). Otherwise, connect an n8n "Get Workflow" node before this one as a fallback.',
       },
       {
         displayName: 'Node Filter',
@@ -192,20 +192,11 @@ export class MiboTesting implements INodeType {
         default: {},
         options: [
           {
-            displayName: 'Custom Server URL',
-            name: 'serverUrl',
-            type: 'string',
-            default: '',
-            description:
-              'Override the default server URL from credentials. Leave empty to use the credential URL.',
-            placeholder: 'https://custom.mibo-ai.com',
-          },
-          {
             displayName: 'Timeout (Seconds)',
             name: 'timeout',
             type: 'number',
             default: DEFAULT_TIMEOUT_SECONDS,
-            description: 'Maximum time to wait for the server response',
+            description: 'Maximum time in seconds to wait for the Mibo Testing server to respond',
           },
         ],
       },
@@ -216,18 +207,33 @@ export class MiboTesting implements INodeType {
     const items = this.getInputData();
     const returnData: INodeExecutionData[] = [];
 
+    const credentials = await this.getCredentials('miboTestingApi');
+    const workflowData = this.getWorkflow();
+    const workflowId = workflowData.id || 'unknown';
+    const workflowName = workflowData.name || 'Unnamed Workflow';
+
     const useGetWorkflow = this.getNodeParameter('useGetWorkflow', 0, false) as boolean;
     let targetNodes: string[] = [];
     const nodeTypeMap: Record<string, string> = {};
+    let fetchedNodes: Array<{ name: string; type: string }> | undefined;
 
     if (useGetWorkflow) {
       const nodeFilterPreset = this.getNodeParameter('nodeFilterPreset', 0, 'all') as string;
-      const inputNodes = items[0]?.json?.nodes as Array<{ name: string; type: string }> | undefined;
-      if (!inputNodes || !Array.isArray(inputNodes)) {
-        throw new NodeOperationError(this.getNode(), 'No workflow nodes found in input data', {
-          description:
-            'Make sure to connect a "Get Workflow" node before this node. The input should contain a "nodes" array.',
-        });
+      const n8nApiKey = (credentials.n8nApiKey as string) || '';
+      const n8nBaseUrl = (credentials.n8nBaseUrl as string) || '';
+      let inputNodes: Array<{ name: string; type: string }>;
+      if (n8nApiKey && n8nBaseUrl) {
+        inputNodes = await fetchWorkflowNodes(this, n8nBaseUrl, n8nApiKey, workflowId);
+        fetchedNodes = inputNodes;
+      } else {
+        const rawNodes = items[0]?.json?.nodes as Array<{ name: string; type: string }> | undefined;
+        if (!rawNodes || !Array.isArray(rawNodes)) {
+          throw new NodeOperationError(this.getNode(), 'No workflow nodes found', {
+            description:
+              'To auto-detect nodes, add your n8n API Key and Base URL in the Mibo Testing credentials (recommended). You can create an API key in n8n under Settings > API. Alternatively, connect an n8n "Get Workflow" node before this one.',
+          });
+        }
+        inputNodes = rawNodes;
       }
 
       const filteredInputNodes = inputNodes.filter((n) => {
@@ -283,7 +289,6 @@ export class MiboTesting implements INodeType {
       });
     }
 
-    const credentials = await this.getCredentials('miboTestingApi');
     const platformId = this.getNodeParameter('platformId', 0, '') as string;
     const includeMetadata = this.getNodeParameter('includeMetadata', 0, false) as boolean;
     const options = this.getNodeParameter('options', 0, {}) as NodeOptions;
@@ -295,9 +300,6 @@ export class MiboTesting implements INodeType {
       });
     }
 
-    const workflowData = this.getWorkflow();
-    const workflowId = workflowData.id || 'unknown';
-    const workflowName = workflowData.name || 'Unnamed Workflow';
     const timestamp = new Date().toISOString();
     const inputData: IDataObject[] = items.map((item) => item.json as IDataObject);
     const metadataConfig = includeMetadata
@@ -331,9 +333,11 @@ export class MiboTesting implements INodeType {
     }
 
     if (!requestId && useGetWorkflow) {
-      const inputNodes = items[0]?.json?.nodes as Array<{ name: string; type: string }> | undefined;
-      if (inputNodes) {
-        const webhookNodes = inputNodes.filter((n) => {
+      const allNodes =
+        fetchedNodes ||
+        (items[0]?.json?.nodes as Array<{ name: string; type: string }> | undefined);
+      if (allNodes) {
+        const webhookNodes = allNodes.filter((n) => {
           const nodeType = n.type?.split('.').pop()?.toLowerCase() || '';
           return nodeType === 'webhook';
         });
@@ -443,9 +447,7 @@ export class MiboTesting implements INodeType {
         )
       : buildTracePayload(inputData, workflowId, metadata, platformId, externalId || '', nodesData);
 
-    const serverUrl = normalizeServerUrl(
-      options.serverUrl || (credentials.serverUrl as string) || DEFAULT_SERVER_URL,
-    );
+    const serverUrl = normalizeServerUrl(getServerUrl());
     const timeout = (options.timeout || DEFAULT_TIMEOUT_SECONDS) * 1000;
 
     const payloadSize = calculatePayloadSize(tracePayload);
@@ -520,7 +522,7 @@ export class MiboTesting implements INodeType {
           {
             description: isPayloadTooLarge
               ? 'Try reducing the number of target nodes or exclude nodes with large data (files, images, etc.)'
-              : 'Check your API key and server URL in the credentials',
+              : 'Check your API key in the Mibo Testing credentials',
           },
         );
       }

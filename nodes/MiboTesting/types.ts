@@ -50,7 +50,6 @@ export interface TracePayload {
 }
 
 export interface NodeOptions {
-  serverUrl?: string;
   timeout?: number;
 }
 

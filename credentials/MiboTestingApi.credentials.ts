@@ -23,12 +23,22 @@ export class MiboTestingApi implements ICredentialType {
         'Your Mibo Testing API key. You can find this in your Mibo Testing dashboard under Settings > API Keys.',
     },
     {
-      displayName: 'Server URL',
-      name: 'serverUrl',
+      displayName: 'n8n API Key (Optional)',
+      name: 'n8nApiKey',
       type: 'string',
-      default: 'https://api.mibo-ai.com',
+      typeOptions: { password: true },
+      default: '',
       description:
-        'The Mibo Testing server URL. Only change this if you are using a self-hosted instance.',
+        'Your n8n instance API key. This allows Mibo Testing to automatically read your workflow structure without needing an extra "Get Workflow" node. To create one: open your n8n instance, go to Settings > API, and click "Create an API Key".',
+    },
+    {
+      displayName: 'n8n Base URL (Optional)',
+      name: 'n8nBaseUrl',
+      type: 'string',
+      default: '',
+      placeholder: 'http://localhost:5678',
+      description:
+        'The URL where your n8n instance is running. Examples: "http://localhost:5678" for local setups, "https://your-n8n.example.com" for self-hosted, or your n8n Cloud URL.',
     },
   ];
 
@@ -44,7 +54,7 @@ export class MiboTestingApi implements ICredentialType {
 
   test: ICredentialTestRequest = {
     request: {
-      baseURL: '={{$credentials?.serverUrl}}',
+      baseURL: 'https://api.mibo-ai.com',
       url: '/health',
       method: 'GET',
     },
