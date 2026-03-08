@@ -43,6 +43,7 @@ export class MiboTesting implements INodeType {
         displayName: 'Auto-detect Workflow Nodes',
         name: 'useGetWorkflow',
         type: 'boolean',
+        noDataExpression: true,
         default: false,
         description:
           'Automatically detect all nodes in your workflow. If you have configured your n8n API Key and Base URL in the credentials, this works automatically (recommended). Otherwise, connect an n8n "Get Workflow" node before this one as a fallback.',
@@ -51,6 +52,7 @@ export class MiboTesting implements INodeType {
         displayName: 'Node Filter',
         name: 'nodeFilterPreset',
         type: 'options',
+        noDataExpression: true,
         default: 'all',
         description: 'Choose which nodes to capture from the workflow',
         displayOptions: {
