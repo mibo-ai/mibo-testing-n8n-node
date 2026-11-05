@@ -17,7 +17,7 @@ n8n community node for **Mibo Testing** - a platform for semantic and procedural
 
 The n8n node is a capture and transport integration. It collects observations available through supported n8n APIs, protects configured sensitive values inside n8n, translates them into canonical OTLP-shaped spans, and sends them to **hosted Mibo Testing**. Self-hosted n8n still sends trace data to the hosted Mibo service.
 
-Mibo owns trace storage, assertions, pass/fail evaluation, smoke tests, trace-grounded test creation, and result history. The node does not invoke workflows, store fixtures, schedule tests, or implement an assertion engine.
+Mibo owns trace storage, assertions, pass/fail evaluation, trace-grounded test creation, and result history. The node does not invoke workflows, store fixtures, schedule tests, or implement an assertion engine.
 
 ```text
 n8n workflow → Mibo Testing node → hosted Mibo
@@ -104,7 +104,7 @@ Capture-time protection is still required even when Mibo or n8n storage uses enc
 
 ### What to do with a trace
 
-For passive evaluation, run the real n8n workflow and let Mibo evaluate assertions against the resulting trace. For active authoring and validation, use Mibo smoke tests or trace-grounded test creation to exercise or derive tests from the configured workflow. Assertions, pass/fail results, and history remain in Mibo rather than in the n8n node.
+Run the real n8n workflow and let Mibo evaluate assertions against the resulting trace. To author tests, use trace-grounded test creation in Mibo to derive them from a captured trace. Assertions, pass/fail results, and history remain in Mibo rather than in the n8n node.
 
 ### Advanced Options
 

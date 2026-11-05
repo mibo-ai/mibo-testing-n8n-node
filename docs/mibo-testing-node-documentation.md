@@ -2,7 +2,7 @@
 
 The Mibo Testing node captures every executed node in your n8n workflow and POSTs them as a canonical OTEL-shaped trace to the Mibo Testing API. By default, it returns one focused `_miboTrace` summary; enable **Include Input Data in Output** to append that summary to every original input item instead.
 
-Trace processing is hosted by Mibo Testing, including for self-hosted n8n deployments. The node captures and protects observations; Mibo owns storage, assertions, pass/fail evaluation, smoke tests, trace-grounded test creation, and result history.
+Trace processing is hosted by Mibo Testing, including for self-hosted n8n deployments. The node captures and protects observations; Mibo owns storage, assertions, pass/fail evaluation, trace-grounded test creation, and result history.
 
 ## Quick start
 
@@ -160,7 +160,7 @@ These node types are always filtered out of the spans array:
 
 ## Request ID correlation
 
-The node sets the `x-request-id` header on the POST so Mibo can match this trace to the test runner that triggered the execution.
+The node sets the `x-request-id` header on the POST. Mibo stores it as the trace's `externalId`. A later POST with the same ID for the same agent replaces that trace.
 
 Resolution order:
 
@@ -237,42 +237,48 @@ Authentication: `x-api-key` header.
 |--------|-------------|
 | `x-api-key` | Your Mibo Testing API key |
 | `Content-Type` | `application/json` |
-| `x-request-id` | Optional — correlates this trace with active testing |
+| `x-request-id` | Optional — the trace `externalId` used for create-or-replace correlation |
 
 ### Response codes
 
 | Code | Meaning |
 |------|---------|
 | `201` | Trace created |
-| `200` | Existing trace updated (matched by `x-request-id`) |
+| `200` | Existing trace replaced (matched by `x-request-id` for the same agent) |
+| `400` | Invalid body, span fields nested too deep, or agent can't be resolved (see [Agent resolution](#agent-resolution)) |
 | `401` | Missing or invalid API key |
-| `403` | API key not authorized for the resolved agent |
-| `404` | Agent not found (see [Agent resolution](#agent-resolution)) |
+| `403` | The API key owner's email is not verified |
 | `413` | Payload too large (exceeds 10 MB) |
+| `429` | Monthly trace quota reached, or too many requests |
 | `500` | Server error |
 
 ### Agent resolution
 
-The API resolves the target agent in this order:
+If you send a `platformId`, only that agent is used. The API reads it from the top level of the request body, then from `mibo.platform_id` or `platformId` inside `metadata`.
 
-1. `platformId` from the request body, if present
-2. API-key restrictions — if the key is restricted to a single agent, that agent is used automatically
+The key's single-agent restriction applies only when no `platformId` is sent. In that case the key's agent is used automatically.
 
-If neither resolves, the API returns `404 PLATFORM_NOT_FOUND`. When the key is restricted but `platformId` doesn't match an allowed agent, you'll get the same error.
+The API returns `400 CUSTOM_API_PLATFORM_NOT_FOUND` in these cases:
+
+- The `platformId` names an agent that doesn't exist, is deleted or archived, or isn't allowed for the key. This applies to a single-agent key too.
+- No `platformId` is sent and the key isn't restricted to a single agent.
 
 ### Error codes
 
 | Code | Description |
 |------|-------------|
-| `MISSING_API_KEY` | The `x-api-key` header is missing |
-| `INVALID_API_KEY` | The API key doesn't exist or has been revoked |
-| `PLATFORM_NOT_FOUND` | Agent can't be resolved — wrong `platformId` or API-key restrictions don't match |
+| `UNAUTHORIZED` | The `x-api-key` header is missing, or the API key doesn't exist or has been revoked |
+| `EMAIL_NOT_VERIFIED` | The API key owner's email is not verified |
+| `CUSTOM_API_PLATFORM_NOT_FOUND` | Agent can't be resolved — wrong `platformId` or API-key restrictions don't match |
 | `VALIDATION_ERROR` | Request body failed validation |
 | `PAYLOAD_TOO_LARGE` | Trace exceeds the 10 MB limit |
+| `TRACE_TOO_DEEP` | Span fields nest more than 100 levels deep, counting JSON inside strings. The trace is not stored. |
+| `TRACE_LIMIT_REACHED` | A new trace would exceed the plan's monthly trace quota. Replacing an existing trace still succeeds. |
+| `RATE_LIMIT_EXCEEDED` | More than 1000 requests per minute per API key |
 
 ---
 
-## How the Mibo runner uses the trace
+## How Mibo uses the trace
 
 ### Matching assertions to spans
 
@@ -280,7 +286,7 @@ Mibo's `node_call` assertions match against `span.name` — the **n8n display na
 
 ### AI node auto-detection
 
-The runner identifies AI spans by substring match on `n8n.node.type`: `langchain`, `openai`, `anthropic`, `azure`, `gemini`, `ollama`. This works out of the box because every span carries its full n8n type.
+Mibo identifies AI spans by substring match on `n8n.node.type`: `langchain`, `openai`, `anthropic`, `azure`, `gemini`, `ollama`. This works out of the box because every span carries its full n8n type.
 
 ### Per-assertion targeting
 
@@ -294,7 +300,7 @@ For fine-grained control, an assertion can specify `target_node` (matched agains
 }
 ```
 
-This overrides the runner's auto-detection.
+This overrides Mibo's auto-detection.
 
 ---
 
