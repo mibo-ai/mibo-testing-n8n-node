@@ -160,7 +160,7 @@ These node types are always filtered out of the spans array:
 
 ## Request ID correlation
 
-The node sets the `x-request-id` header on the POST. Mibo stores it as the trace's `externalId` and matches a later POST with the same ID to that trace.
+The node sets the `x-request-id` header on the POST. Mibo stores it as the trace's `externalId`. A later POST with the same ID for the same agent replaces that trace.
 
 Resolution order:
 
@@ -237,7 +237,7 @@ Authentication: `x-api-key` header.
 |--------|-------------|
 | `x-api-key` | Your Mibo Testing API key |
 | `Content-Type` | `application/json` |
-| `x-request-id` | Optional — the trace `externalId` used for create-or-replace matching |
+| `x-request-id` | Optional — the trace `externalId` used for create-or-replace correlation |
 
 ### Response codes
 

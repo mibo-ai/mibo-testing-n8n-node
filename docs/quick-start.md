@@ -30,7 +30,7 @@ Automatic Sensitive Data Protection is enabled by default. Custom Sensitive Data
 - **Evaluation:** configure applicable assertions in Mibo and run the workflow; Mibo evaluates the captured trace and records pass/fail results.
 - **Test authoring:** use trace-grounded test creation in Mibo to derive tests from a captured trace.
 
-The node captures observations; Mibo owns assertions, trace evaluation, test authoring, result history, and reporting. Exact per-node inputs, retries, and timing are unavailable through the supported community-node APIs and are not inferred.
+The node captures observations; Mibo owns assertions, pass/fail evaluation, test authoring, result history, and reporting. Exact per-node inputs, retries, and timing are unavailable through the supported community-node APIs and are not inferred.
 
 ## Troubleshooting
 
