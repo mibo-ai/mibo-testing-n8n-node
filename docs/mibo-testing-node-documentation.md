@@ -245,10 +245,11 @@ Authentication: `x-api-key` header.
 |------|---------|
 | `201` | Trace created |
 | `200` | Existing trace replaced (matched by `x-request-id` for the same agent) |
-| `400` | Invalid body, or agent can't be resolved (see [Agent resolution](#agent-resolution)) |
+| `400` | Invalid body, attributes nested too deep, or agent can't be resolved (see [Agent resolution](#agent-resolution)) |
 | `401` | Missing or invalid API key |
 | `403` | The API key owner's email is not verified |
 | `413` | Payload too large (exceeds 10 MB) |
+| `429` | Monthly trace quota reached, or too many requests |
 | `500` | Server error |
 
 ### Agent resolution
@@ -269,6 +270,9 @@ If neither resolves, the API returns `400 CUSTOM_API_PLATFORM_NOT_FOUND`. When t
 | `CUSTOM_API_PLATFORM_NOT_FOUND` | Agent can't be resolved — wrong `platformId` or API-key restrictions don't match |
 | `VALIDATION_ERROR` | Request body failed validation |
 | `PAYLOAD_TOO_LARGE` | Trace exceeds the 10 MB limit |
+| `TRACE_TOO_DEEP` | Attributes nest more than 100 levels deep, counting JSON inside strings. The trace is not stored. |
+| `TRACE_LIMIT_REACHED` | A new trace would exceed the plan's monthly trace quota. Replacing an existing trace still succeeds. |
+| `RATE_LIMIT_EXCEEDED` | Too many trace requests in a short window |
 
 ---
 
