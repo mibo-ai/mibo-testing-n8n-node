@@ -245,7 +245,7 @@ Authentication: `x-api-key` header.
 |------|---------|
 | `201` | Trace created |
 | `200` | Existing trace replaced (matched by `x-request-id` for the same agent) |
-| `400` | Invalid body, attributes nested too deep, or agent can't be resolved (see [Agent resolution](#agent-resolution)) |
+| `400` | Invalid body, span fields nested too deep, or agent can't be resolved (see [Agent resolution](#agent-resolution)) |
 | `401` | Missing or invalid API key |
 | `403` | The API key owner's email is not verified |
 | `413` | Payload too large (exceeds 10 MB) |
@@ -254,12 +254,14 @@ Authentication: `x-api-key` header.
 
 ### Agent resolution
 
-The API resolves the target agent in this order:
+If you send a `platformId`, only that agent is used. The API reads it from the top level of the request body, then from `mibo.platform_id` or `platformId` inside `metadata`.
 
-1. `platformId` at the top level of the request body, then `mibo.platform_id` or `platformId` inside `metadata`
-2. API-key restrictions — if the key is restricted to a single agent, that agent is used automatically
+The key's single-agent restriction applies only when no `platformId` is sent. In that case the key's agent is used automatically.
 
-If neither resolves, the API returns `400 CUSTOM_API_PLATFORM_NOT_FOUND`. When the key is restricted but `platformId` doesn't match an allowed agent, you'll get the same error.
+The API returns `400 CUSTOM_API_PLATFORM_NOT_FOUND` in these cases:
+
+- The `platformId` names an agent that doesn't exist, is deleted or archived, or isn't allowed for the key. This applies to a single-agent key too.
+- No `platformId` is sent and the key isn't restricted to a single agent.
 
 ### Error codes
 
@@ -270,9 +272,9 @@ If neither resolves, the API returns `400 CUSTOM_API_PLATFORM_NOT_FOUND`. When t
 | `CUSTOM_API_PLATFORM_NOT_FOUND` | Agent can't be resolved — wrong `platformId` or API-key restrictions don't match |
 | `VALIDATION_ERROR` | Request body failed validation |
 | `PAYLOAD_TOO_LARGE` | Trace exceeds the 10 MB limit |
-| `TRACE_TOO_DEEP` | Attributes nest more than 100 levels deep, counting JSON inside strings. The trace is not stored. |
+| `TRACE_TOO_DEEP` | Span fields nest more than 100 levels deep, counting JSON inside strings. The trace is not stored. |
 | `TRACE_LIMIT_REACHED` | A new trace would exceed the plan's monthly trace quota. Replacing an existing trace still succeeds. |
-| `RATE_LIMIT_EXCEEDED` | Too many trace requests in a short window |
+| `RATE_LIMIT_EXCEEDED` | More than 1000 requests per minute per API key |
 
 ---
 
