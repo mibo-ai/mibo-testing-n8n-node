@@ -2,7 +2,7 @@
 
 The Mibo Testing node captures every executed node in your n8n workflow and POSTs them as a canonical OTEL-shaped trace to the Mibo Testing API. By default, it returns one focused `_miboTrace` summary; enable **Include Input Data in Output** to append that summary to every original input item instead.
 
-Trace processing is hosted by Mibo Testing, including for self-hosted n8n deployments. The node captures and protects observations; Mibo owns storage, assertions, pass/fail evaluation, smoke tests, trace-grounded test creation, and result history.
+Trace processing is hosted by Mibo Testing, including for self-hosted n8n deployments. The node captures and protects observations; Mibo owns storage, assertions, pass/fail evaluation, trace-grounded test creation, and result history.
 
 ## Quick start
 
@@ -160,7 +160,7 @@ These node types are always filtered out of the spans array:
 
 ## Request ID correlation
 
-The node sets the `x-request-id` header on the POST so Mibo can match this trace to the test runner that triggered the execution.
+The node sets the `x-request-id` header on the POST. Mibo stores it as the trace's `externalId` and matches a later POST with the same ID to that trace.
 
 Resolution order:
 
@@ -237,7 +237,7 @@ Authentication: `x-api-key` header.
 |--------|-------------|
 | `x-api-key` | Your Mibo Testing API key |
 | `Content-Type` | `application/json` |
-| `x-request-id` | Optional — correlates this trace with active testing |
+| `x-request-id` | Optional — the trace `externalId` used for create-or-replace matching |
 
 ### Response codes
 
