@@ -244,10 +244,10 @@ Authentication: `x-api-key` header.
 | Code | Meaning |
 |------|---------|
 | `201` | Trace created |
-| `200` | Existing trace updated (matched by `x-request-id`) |
+| `200` | Existing trace replaced (matched by `x-request-id` for the same agent) |
+| `400` | Invalid body, or agent can't be resolved (see [Agent resolution](#agent-resolution)) |
 | `401` | Missing or invalid API key |
-| `403` | API key not authorized for the resolved agent |
-| `404` | Agent not found (see [Agent resolution](#agent-resolution)) |
+| `403` | The API key owner's email is not verified |
 | `413` | Payload too large (exceeds 10 MB) |
 | `500` | Server error |
 
@@ -255,24 +255,24 @@ Authentication: `x-api-key` header.
 
 The API resolves the target agent in this order:
 
-1. `platformId` from the request body, if present
+1. `platformId` at the top level of the request body, then `mibo.platform_id` or `platformId` inside `metadata`
 2. API-key restrictions — if the key is restricted to a single agent, that agent is used automatically
 
-If neither resolves, the API returns `404 PLATFORM_NOT_FOUND`. When the key is restricted but `platformId` doesn't match an allowed agent, you'll get the same error.
+If neither resolves, the API returns `400 CUSTOM_API_PLATFORM_NOT_FOUND`. When the key is restricted but `platformId` doesn't match an allowed agent, you'll get the same error.
 
 ### Error codes
 
 | Code | Description |
 |------|-------------|
-| `MISSING_API_KEY` | The `x-api-key` header is missing |
-| `INVALID_API_KEY` | The API key doesn't exist or has been revoked |
-| `PLATFORM_NOT_FOUND` | Agent can't be resolved — wrong `platformId` or API-key restrictions don't match |
+| `UNAUTHORIZED` | The `x-api-key` header is missing, or the API key doesn't exist or has been revoked |
+| `EMAIL_NOT_VERIFIED` | The API key owner's email is not verified |
+| `CUSTOM_API_PLATFORM_NOT_FOUND` | Agent can't be resolved — wrong `platformId` or API-key restrictions don't match |
 | `VALIDATION_ERROR` | Request body failed validation |
 | `PAYLOAD_TOO_LARGE` | Trace exceeds the 10 MB limit |
 
 ---
 
-## How the Mibo runner uses the trace
+## How Mibo uses the trace
 
 ### Matching assertions to spans
 
@@ -280,7 +280,7 @@ Mibo's `node_call` assertions match against `span.name` — the **n8n display na
 
 ### AI node auto-detection
 
-The runner identifies AI spans by substring match on `n8n.node.type`: `langchain`, `openai`, `anthropic`, `azure`, `gemini`, `ollama`. This works out of the box because every span carries its full n8n type.
+Mibo identifies AI spans by substring match on `n8n.node.type`: `langchain`, `openai`, `anthropic`, `azure`, `gemini`, `ollama`. This works out of the box because every span carries its full n8n type.
 
 ### Per-assertion targeting
 
@@ -294,7 +294,7 @@ For fine-grained control, an assertion can specify `target_node` (matched agains
 }
 ```
 
-This overrides the runner's auto-detection.
+This overrides Mibo's auto-detection.
 
 ---
 
