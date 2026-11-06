@@ -80,6 +80,7 @@ export async function sendTrace(
     headers,
     body: payload,
     json: true,
+    returnFullResponse: true,
     timeout,
   });
 }

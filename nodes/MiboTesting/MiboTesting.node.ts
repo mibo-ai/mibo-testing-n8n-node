@@ -440,7 +440,10 @@ export class MiboTesting implements INodeType {
 
       const traceInfo: IDataObject = {
         sent: true,
-        traceId: response?.data?.id || 'unknown',
+        traceId:
+          Object.entries(response?.headers || {}).find(
+            ([name]) => name.toLowerCase() === 'x-mibo-trace-id',
+          )?.[1] || 'unknown',
         platformId: platformId || 'resolved-from-api-key',
         requestId: requestId || null,
         requestIdSource,
