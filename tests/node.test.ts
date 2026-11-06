@@ -126,18 +126,7 @@ describe('MiboTesting.execute', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSendTrace.mockResolvedValue({
-      success: true,
-      message: 'Trace created',
-      timestamp: '2025-01-01T00:00:00.000Z',
-      data: {
-        id: 'trace-id-123',
-        platformId: 'plat-1',
-        status: 'completed',
-        createdAt: '2025-01-01T00:00:00.000Z',
-        updatedAt: '2025-01-01T00:00:00.000Z',
-      },
-    });
+    mockSendTrace.mockResolvedValue({ headers: { 'x-mibo-trace-id': 'trace-id-123' } });
   });
 
   describe('canonical trace emission', () => {
@@ -344,6 +333,44 @@ describe('MiboTesting.execute', () => {
       expect(summary.recommendations).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ code: 'enable_intermediate_steps' })]),
       );
+    });
+
+    it.each([
+      ['x-mibo-trace-id', 'trace-lowercase'],
+      ['X-Mibo-Trace-Id', 'trace-mixed-case'],
+    ])('returns the trace ID from the %s response header', async (header, traceId) => {
+      const { mock, httpRequest } = createMockExecuteFunctions();
+      const actual = await vi.importActual<typeof import('../nodes/MiboTesting/mibo-client')>(
+        '../nodes/MiboTesting/mibo-client',
+      );
+      mockSendTrace.mockImplementationOnce(actual.sendTrace);
+      httpRequest.mockImplementationOnce(async () => ({
+        nodes: DEFAULT_WORKFLOW_NODES,
+        connections: DEFAULT_CONNECTIONS,
+      }));
+      httpRequest.mockImplementationOnce(async (options: unknown) => {
+        const request = options as { returnFullResponse?: boolean };
+        return request.returnFullResponse ? { headers: { [header]: traceId }, body: {} } : {};
+      });
+
+      const result = await node.execute.call(mock);
+      expect(result[0][0].json._miboTrace).toMatchObject({ traceId });
+    });
+
+    it('returns unknown when the response has no trace ID header', async () => {
+      const { mock, httpRequest } = createMockExecuteFunctions();
+      const actual = await vi.importActual<typeof import('../nodes/MiboTesting/mibo-client')>(
+        '../nodes/MiboTesting/mibo-client',
+      );
+      mockSendTrace.mockImplementationOnce(actual.sendTrace);
+      httpRequest.mockResolvedValueOnce({
+        nodes: DEFAULT_WORKFLOW_NODES,
+        connections: DEFAULT_CONNECTIONS,
+      });
+      httpRequest.mockResolvedValueOnce({ headers: {}, body: {} });
+
+      const result = await node.execute.call(mock);
+      expect(result[0][0].json._miboTrace).toMatchObject({ traceId: 'unknown' });
     });
 
     it('returns one structured trace summary by default', async () => {

@@ -16,17 +16,7 @@ export interface MiboErrorResponse {
 }
 
 export interface MiboSuccessResponse {
-  data: {
-    createdAt: string;
-    externalId?: string;
-    id: string;
-    platformId: string;
-    status: string;
-    updatedAt: string;
-  };
-  message: string;
-  success: boolean;
-  timestamp: string;
+  headers?: Record<string, string | undefined>;
 }
 
 export interface WorkflowNode {

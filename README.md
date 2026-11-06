@@ -146,6 +146,8 @@ The node returns one structured summary by default, without repeating the input 
 }
 ```
 
+The `traceId` comes from the Mibo API response header and is `unknown` if the header is missing.
+
 Turn on **Include Input Data in Output** to append the same `_miboTrace` summary to every original input item.
 
 ## Trace shape
