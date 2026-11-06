@@ -1,11 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Bug Fixes
-
-* return the trace ID from the Mibo API response header in `_miboTrace`.
-
 ## [2.0.0](https://github.com/mibo-ai/mibo-testing-n8n-node/compare/n8n-nodes-mibo-testing-v1.0.3...n8n-nodes-mibo-testing-v2.0.0) (2026-08-21)
 
 
