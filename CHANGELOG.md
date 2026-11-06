@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/mibo-ai/mibo-testing-n8n-node/compare/n8n-nodes-mibo-testing-v2.0.0...n8n-nodes-mibo-testing-v2.0.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **node:** read the trace id from the X-Mibo-Trace-Id header ([#13](https://github.com/mibo-ai/mibo-testing-n8n-node/issues/13)) ([29646df](https://github.com/mibo-ai/mibo-testing-n8n-node/commit/29646dfc638ca03a2c7ce27924d4248e1af3c654))
+
 ## [2.0.0](https://github.com/mibo-ai/mibo-testing-n8n-node/compare/n8n-nodes-mibo-testing-v1.0.3...n8n-nodes-mibo-testing-v2.0.0) (2026-08-21)
 
 
