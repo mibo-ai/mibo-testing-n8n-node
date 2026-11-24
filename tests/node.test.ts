@@ -715,3 +715,40 @@ describe('MiboTesting.execute', () => {
     });
   });
 });
+
+describe('MiboTesting.execute Mibo call failures', () => {
+  const node = new MiboTesting();
+  const cases: Array<[string, Record<string, unknown> | null, unknown]> = [
+    ['an empty API key', { apiKey: '' }, null],
+    ['a 401', null, { message: 'Unauthorized', response: { status: 401 } }],
+    ['a timeout', null, { message: 'timeout of 30000ms exceeded', code: 'ECONNABORTED' }],
+  ];
+
+  for (const [label, creds, sendError] of cases) {
+    const credentials = creds ? { ...creds, n8nApiKey: 'k', n8nBaseUrl: 'http://x/api/v1' } : undefined;
+
+    it(`returns an error item for ${label} under Continue`, async () => {
+      if (sendError) mockSendTrace.mockRejectedValue(sendError);
+      const { mock } = createMockExecuteFunctions({ continueOnFail: true, credentials });
+      const result = await node.execute.call(mock);
+      expect(result[0]).toHaveLength(1);
+      expect(result[0][0].json._miboTrace).toMatchObject({ sent: false });
+    });
+
+    it(`throws for ${label} by default`, async () => {
+      if (sendError) mockSendTrace.mockRejectedValue(sendError);
+      const { mock } = createMockExecuteFunctions({ credentials });
+      await expect(node.execute.call(mock)).rejects.toThrow();
+    });
+  }
+
+  it('returns an error item under Continue when the workflow cannot be resolved', async () => {
+    const { mock } = createMockExecuteFunctions({
+      continueOnFail: true,
+      credentials: { apiKey: 'k' },
+      inputItems: [{ json: {} }],
+    });
+    const result = await node.execute.call(mock);
+    expect(result[0][0].json._miboTrace).toMatchObject({ sent: false });
+  });
+});

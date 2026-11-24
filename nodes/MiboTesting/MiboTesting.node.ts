@@ -231,11 +231,43 @@ export class MiboTesting implements INodeType {
   };
 
   async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+    if (!this.continueOnFail()) return runExecute.call(this);
+
+    try {
+      return await runExecute.call(this);
+    } catch (error: unknown) {
+      // Tracing is observability: when the user chose Continue, no Mibo failure may stop the workflow.
+      const items = this.getInputData();
+      return [
+        [
+          {
+            json: {
+              _miboTrace: {
+                sent: false,
+                error: error instanceof Error ? error.message : parseErrorResponse(error),
+                timestamp: new Date().toISOString(),
+              },
+            },
+            pairedItem: items.map((_, item) => ({ item })),
+          },
+        ],
+      ];
+    }
+  }
+}
+
+async function runExecute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+  {
     const items = this.getInputData();
     const returnData: INodeExecutionData[] = [];
     const aggregatePairedItems = items.map((_, item) => ({ item }));
 
     const credentials = await this.getCredentials('miboTestingApi');
+    if (!String(credentials.apiKey ?? '').trim()) {
+      throw new NodeOperationError(this.getNode(), 'Mibo Testing API key is empty', {
+        description: 'Set the API Key in the Mibo Testing credentials.',
+      });
+    }
     const workflowData = this.getWorkflow();
     const workflowId = workflowData.id || 'unknown';
     const workflowName = workflowData.name || 'Unnamed Workflow';
