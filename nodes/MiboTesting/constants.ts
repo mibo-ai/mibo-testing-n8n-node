@@ -18,10 +18,10 @@ export const AUTO_EXCLUDED_NODE_TYPES = [
 ];
 
 export const ERROR_CODES = {
-  MISSING_API_KEY:
-    'Missing x-api-key header. Make sure you are sending the API key in the headers.',
-  INVALID_API_KEY:
-    'The API key does not exist or has been revoked. Verify that you are using a valid API key.',
+  UNAUTHORIZED:
+    'Mibo rejected the API key. It does not exist or has been revoked. Keys created before you verified your email are revoked at verification. Create a new key in Mibo and update the credential. This is not the n8n API key.',
+  API_KEY_EXPIRED:
+    'The Mibo API key has expired. Create a new key in Mibo and update the credential.',
   VALIDATION_ERROR: 'The request body failed validation.',
   PLATFORM_NOT_FOUND: {
     withRestrictions:

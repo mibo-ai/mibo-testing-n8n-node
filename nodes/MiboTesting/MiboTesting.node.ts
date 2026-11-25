@@ -231,299 +231,306 @@ export class MiboTesting implements INodeType {
   };
 
   async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
-    const items = this.getInputData();
-    const returnData: INodeExecutionData[] = [];
-    const aggregatePairedItems = items.map((_, item) => ({ item }));
-
-    const credentials = await this.getCredentials('miboTestingApi');
-    const workflowData = this.getWorkflow();
-    const workflowId = workflowData.id || 'unknown';
-    const workflowName = workflowData.name || 'Unnamed Workflow';
-
-    const { nodes: workflowNodes, connections } = await resolveWorkflow(
-      this,
-      credentials,
-      workflowId,
-      items,
-    );
-
-    const platformId = this.getNodeParameter('platformId', 0, '') as string;
-    const includeMetadata = this.getNodeParameter('includeMetadata', 0, false) as boolean;
-    const automaticRedaction = this.getNodeParameter('automaticRedaction', 0, true) as boolean;
-    const manualRedaction = this.getNodeParameter('manualRedaction', 0, false) as boolean;
-    const redactionFields = this.getNodeParameter('redactionFields', 0, {}) as IDataObject;
-    const options = this.getNodeParameter('options', 0, {}) as NodeOptions;
-    const includeInputData = Boolean(options.includeInputData);
-
-    let redactionPolicy;
-    try {
-      redactionPolicy = buildRedactionPolicy(automaticRedaction, manualRedaction, redactionFields);
-    } catch (error) {
-      throw new NodeOperationError(this.getNode(), 'Invalid redaction field path', {
-        description: error instanceof Error ? error.message : 'Use dot-separated field paths.',
-      });
-    }
-
-    if (platformId && !isValidUUID(platformId)) {
-      throw new NodeOperationError(this.getNode(), 'Agent ID must be a valid UUID', {
-        description:
-          'The Agent ID must be in UUID format (e.g., 550e8400-e29b-41d4-a716-446655440000)',
-      });
-    }
-
-    const timestamp = new Date().toISOString();
-    const metadataConfig = includeMetadata
-      ? (this.getNodeParameter('metadata', 0, {}) as IDataObject)
-      : {};
-
-    const metadata = buildMetadata(
-      workflowId,
-      workflowName,
-      timestamp,
-      includeMetadata,
-      metadataConfig,
-      this,
-    );
-
-    const proxy = this.getWorkflowDataProxy(0);
-    // Excluded from node spans: the Mibo Testing node itself, and AI tools (a tool is not
-    // a node — it appears only as a real tool-call from intermediateSteps). Model/memory
-    // sub-nodes stay as output-less spans.
-    const selfNodeName = this.getNode().name;
-    const subNodeNames = buildSubNodeNames(connections);
-    const toolNodeNames = buildToolNodeNames(connections);
-    const capturedNodes = workflowNodes.filter(
-      (n) =>
-        n.name !== selfNodeName &&
-        !toolNodeNames.has(n.name) &&
-        !AUTO_EXCLUDED_NODE_TYPES.includes(n.type),
-    );
-    const sources: SpanSource[] = [];
-    const nodesNotExecuted: string[] = [];
-    let extractedRequestId: string | undefined;
-
-    for (const item of items) {
-      extractedRequestId = findRequestIdInData(item.json as IDataObject);
-      if (extractedRequestId) break;
-    }
-
-    for (const wfNode of capturedNodes) {
-      const nodeName = wfNode.name;
-      const type = wfNode.type || 'unknown';
-      const parameters =
-        wfNode.parameters && Object.keys(wfNode.parameters).length > 0
-          ? wfNode.parameters
-          : undefined;
-
-      const isSubNode = subNodeNames.has(nodeName);
-
-      let captured = false;
-      // Sub-nodes never expose output via $items — skip the lookup, emit them below.
-      if (!isSubNode) {
-        try {
-          const nodeItems = proxy.$items(nodeName);
-          if (nodeItems && nodeItems.length > 0) {
-            const itemsJson: IDataObject[] = [];
-            for (const ni of nodeItems) {
-              const itemJson = ni.json as IDataObject;
-              itemsJson.push(itemJson);
-              if (!extractedRequestId) {
-                extractedRequestId = findRequestIdInData(itemJson);
-              }
-            }
-            sources.push({
-              nodeName,
-              type,
-              status: 'success',
-              items: itemsJson,
-              parameters,
-            });
-            captured = true;
-          }
-        } catch {
-          // node not reachable in this execution branch — fall through below
-        }
-      }
-
-      if (!captured) {
-        if (isSubNode) {
-          // Ran inside its parent: success, no output, not an alarm.
-          sources.push({ nodeName, type, status: 'success', items: [], parameters });
-        } else {
-          nodesNotExecuted.push(nodeName);
-          sources.push({ nodeName, type, status: 'skipped', items: [], parameters });
-        }
-      }
-    }
-
-    if (sources.filter((s) => s.items.length > 0).length === 0) {
-      throw new NodeOperationError(this.getNode(), 'No executed nodes were captured', {
-        description: `None of the workflow nodes had executed data when this node ran. Make sure the Mibo Testing node runs after the steps you want to capture. See ${DOCS_URL}.`,
-      });
-    }
-
-    const manualRequestId = this.getNodeParameter('requestId', 0, '') as string;
-    const requestId = manualRequestId || extractedRequestId || this.getExecutionId() || undefined;
-    const requestIdSource = manualRequestId
-      ? 'manualOverride'
-      : extractedRequestId
-        ? 'x-request-id'
-        : 'executionId';
-
-    const {
-      sources: redactedSources,
-      metadata: redactedMetadata,
-      summary,
-    } = redactCapture(sources, metadata, redactionPolicy);
-
-    const parentMap = buildParentMap(connections);
-    const toolCalls = extractToolCalls(redactedSources);
-    const httpResponseStatus = resolveHttpResponseStatus(workflowNodes, parentMap, selfNodeName);
-
-    const tracePayload = buildCanonicalTracePayload(
-      redactedSources,
-      workflowId,
-      redactedMetadata,
-      platformId,
-      parentMap,
-      toolCalls,
-      httpResponseStatus,
-    );
-
-    // Agents that have tools wired but won't expose them (returnIntermediateSteps off).
-    // Distinct from an agent that simply didn't call a tool this run.
-    const agentsNeedingSteps = agentsMissingIntermediateSteps(connections, workflowNodes);
-
-    const serverUrl = normalizeServerUrl(DEFAULT_SERVER_URL);
-    const timeout = (options.timeout || DEFAULT_TIMEOUT_SECONDS) * 1000;
-
-    const payloadSize = calculatePayloadSize(tracePayload);
-    const payloadSizeFormatted = formatBytes(payloadSize);
-    const payloadWarning = getPayloadSizeWarning(payloadSize);
+    if (!this.continueOnFail()) return runExecute.call(this);
 
     try {
-      const response = await sendTrace(
-        this,
-        serverUrl,
-        credentials.apiKey as string,
-        tracePayload,
-        timeout,
-        requestId,
-      );
-
-      const recommendations: IDataObject[] = [];
-
-      if (nodesNotExecuted.length > 0) {
-        recommendations.push({
-          code: 'nodes_not_executed',
-          message:
-            'Review these nodes if you expected them to run. n8n exposed no output for this execution.',
-          nodes: nodesNotExecuted,
-        });
-      }
-
-      if (agentsNeedingSteps.length > 0) {
-        recommendations.push({
-          code: 'enable_intermediate_steps',
-          message:
-            "Turn on 'Return Intermediate Steps' on these agent nodes so Mibo can capture tool calls.",
-          nodes: agentsNeedingSteps,
-        });
-      }
-
-      if (payloadWarning) {
-        recommendations.push({
-          code: 'payload_size',
-          message: payloadWarning,
-        });
-      }
-
+      return await runExecute.call(this);
+    } catch (error: unknown) {
+      // Tracing is observability: when the user chose Continue, no Mibo failure may stop the workflow.
+      const items = this.getInputData();
       const traceInfo: IDataObject = {
-        sent: true,
-        traceId:
-          Object.entries(response?.headers || {}).find(
-            ([name]) => name.toLowerCase() === 'x-mibo-trace-id',
-          )?.[1] || 'unknown',
-        platformId: platformId || 'resolved-from-api-key',
-        requestId: requestId || null,
-        requestIdSource,
-        timestamp,
-        trace: {
-          spansSent: tracePayload.spans.length,
-          toolCallsSent: toolCalls.length,
-          payloadSize: payloadSizeFormatted,
-          nodes: redactedSources.map((source) => ({
-            name: source.nodeName,
-            status: source.status,
-            itemsCaptured: source.items.length,
-          })),
-        },
-        redaction: summary as unknown as IDataObject,
-        recommendations,
-        miboUrl: MIBO_APP_URL,
+        sent: false,
+        error: error instanceof Error ? error.message : parseErrorResponse(error),
+        timestamp: new Date().toISOString(),
       };
-
-      if (includeInputData) {
-        for (let i = 0; i < items.length; i++) {
-          returnData.push({
-            json: {
-              ...items[i].json,
-              _miboTrace: traceInfo,
-            },
+      const options = this.getNodeParameter('options', 0, {}) as NodeOptions;
+      if (options.includeInputData) {
+        return [
+          items.map((item, i) => ({
+            json: { ...item.json, _miboTrace: traceInfo },
             pairedItem: { item: i },
+          })),
+        ];
+      }
+      return [
+        [
+          {
+            json: { _miboTrace: traceInfo },
+            pairedItem: items.map((_, item) => ({ item })),
+          },
+        ],
+      ];
+    }
+  }
+}
+
+async function runExecute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+  const items = this.getInputData();
+  const returnData: INodeExecutionData[] = [];
+  const aggregatePairedItems = items.map((_, item) => ({ item }));
+
+  const credentials = await this.getCredentials('miboTestingApi');
+  if (!String(credentials.apiKey ?? '').trim()) {
+    throw new NodeOperationError(this.getNode(), 'Mibo Testing API key is empty', {
+      description:
+        'Open the Mibo Testing credential and paste the API key from your Mibo workspace settings.',
+    });
+  }
+  const workflowData = this.getWorkflow();
+  const workflowId = workflowData.id || 'unknown';
+  const workflowName = workflowData.name || 'Unnamed Workflow';
+
+  const { nodes: workflowNodes, connections } = await resolveWorkflow(
+    this,
+    credentials,
+    workflowId,
+    items,
+  );
+
+  const platformId = this.getNodeParameter('platformId', 0, '') as string;
+  const includeMetadata = this.getNodeParameter('includeMetadata', 0, false) as boolean;
+  const automaticRedaction = this.getNodeParameter('automaticRedaction', 0, true) as boolean;
+  const manualRedaction = this.getNodeParameter('manualRedaction', 0, false) as boolean;
+  const redactionFields = this.getNodeParameter('redactionFields', 0, {}) as IDataObject;
+  const options = this.getNodeParameter('options', 0, {}) as NodeOptions;
+  const includeInputData = Boolean(options.includeInputData);
+
+  let redactionPolicy;
+  try {
+    redactionPolicy = buildRedactionPolicy(automaticRedaction, manualRedaction, redactionFields);
+  } catch (error) {
+    throw new NodeOperationError(this.getNode(), 'Invalid redaction field path', {
+      description: error instanceof Error ? error.message : 'Use dot-separated field paths.',
+    });
+  }
+
+  if (platformId && !isValidUUID(platformId)) {
+    throw new NodeOperationError(this.getNode(), 'Agent ID must be a valid UUID', {
+      description:
+        'The Agent ID must be in UUID format (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+    });
+  }
+
+  const timestamp = new Date().toISOString();
+  const metadataConfig = includeMetadata
+    ? (this.getNodeParameter('metadata', 0, {}) as IDataObject)
+    : {};
+
+  const metadata = buildMetadata(
+    workflowId,
+    workflowName,
+    timestamp,
+    includeMetadata,
+    metadataConfig,
+    this,
+  );
+
+  const proxy = this.getWorkflowDataProxy(0);
+  // Excluded from node spans: the Mibo Testing node itself, and AI tools (a tool is not
+  // a node — it appears only as a real tool-call from intermediateSteps). Model/memory
+  // sub-nodes stay as output-less spans.
+  const selfNodeName = this.getNode().name;
+  const subNodeNames = buildSubNodeNames(connections);
+  const toolNodeNames = buildToolNodeNames(connections);
+  const capturedNodes = workflowNodes.filter(
+    (n) =>
+      n.name !== selfNodeName &&
+      !toolNodeNames.has(n.name) &&
+      !AUTO_EXCLUDED_NODE_TYPES.includes(n.type),
+  );
+  const sources: SpanSource[] = [];
+  const nodesNotExecuted: string[] = [];
+  let extractedRequestId: string | undefined;
+
+  for (const item of items) {
+    extractedRequestId = findRequestIdInData(item.json as IDataObject);
+    if (extractedRequestId) break;
+  }
+
+  for (const wfNode of capturedNodes) {
+    const nodeName = wfNode.name;
+    const type = wfNode.type || 'unknown';
+    const parameters =
+      wfNode.parameters && Object.keys(wfNode.parameters).length > 0
+        ? wfNode.parameters
+        : undefined;
+
+    const isSubNode = subNodeNames.has(nodeName);
+
+    let captured = false;
+    // Sub-nodes never expose output via $items — skip the lookup, emit them below.
+    if (!isSubNode) {
+      try {
+        const nodeItems = proxy.$items(nodeName);
+        if (nodeItems && nodeItems.length > 0) {
+          const itemsJson: IDataObject[] = [];
+          for (const ni of nodeItems) {
+            const itemJson = ni.json as IDataObject;
+            itemsJson.push(itemJson);
+            if (!extractedRequestId) {
+              extractedRequestId = findRequestIdInData(itemJson);
+            }
+          }
+          sources.push({
+            nodeName,
+            type,
+            status: 'success',
+            items: itemsJson,
+            parameters,
           });
+          captured = true;
         }
+      } catch {
+        // node not reachable in this execution branch — fall through below
+      }
+    }
+
+    if (!captured) {
+      if (isSubNode) {
+        // Ran inside its parent: success, no output, not an alarm.
+        sources.push({ nodeName, type, status: 'success', items: [], parameters });
       } else {
+        nodesNotExecuted.push(nodeName);
+        sources.push({ nodeName, type, status: 'skipped', items: [], parameters });
+      }
+    }
+  }
+
+  if (sources.filter((s) => s.items.length > 0).length === 0) {
+    throw new NodeOperationError(this.getNode(), 'No executed nodes were captured', {
+      description: `None of the workflow nodes had executed data when this node ran. Make sure the Mibo Testing node runs after the steps you want to capture. See ${DOCS_URL}.`,
+    });
+  }
+
+  const manualRequestId = this.getNodeParameter('requestId', 0, '') as string;
+  const requestId = manualRequestId || extractedRequestId || this.getExecutionId() || undefined;
+  const requestIdSource = manualRequestId
+    ? 'manualOverride'
+    : extractedRequestId
+      ? 'x-request-id'
+      : 'executionId';
+
+  const {
+    sources: redactedSources,
+    metadata: redactedMetadata,
+    summary,
+  } = redactCapture(sources, metadata, redactionPolicy);
+
+  const parentMap = buildParentMap(connections);
+  const toolCalls = extractToolCalls(redactedSources);
+  const httpResponseStatus = resolveHttpResponseStatus(workflowNodes, parentMap, selfNodeName);
+
+  const tracePayload = buildCanonicalTracePayload(
+    redactedSources,
+    workflowId,
+    redactedMetadata,
+    platformId,
+    parentMap,
+    toolCalls,
+    httpResponseStatus,
+  );
+
+  // Agents that have tools wired but won't expose them (returnIntermediateSteps off).
+  // Distinct from an agent that simply didn't call a tool this run.
+  const agentsNeedingSteps = agentsMissingIntermediateSteps(connections, workflowNodes);
+
+  const serverUrl = normalizeServerUrl(DEFAULT_SERVER_URL);
+  const timeout = (options.timeout || DEFAULT_TIMEOUT_SECONDS) * 1000;
+
+  const payloadSize = calculatePayloadSize(tracePayload);
+  const payloadSizeFormatted = formatBytes(payloadSize);
+  const payloadWarning = getPayloadSizeWarning(payloadSize);
+
+  try {
+    const response = await sendTrace(
+      this,
+      serverUrl,
+      credentials.apiKey as string,
+      tracePayload,
+      timeout,
+      requestId,
+    );
+
+    const recommendations: IDataObject[] = [];
+
+    if (nodesNotExecuted.length > 0) {
+      recommendations.push({
+        code: 'nodes_not_executed',
+        message:
+          'Review these nodes if you expected them to run. n8n exposed no output for this execution.',
+        nodes: nodesNotExecuted,
+      });
+    }
+
+    if (agentsNeedingSteps.length > 0) {
+      recommendations.push({
+        code: 'enable_intermediate_steps',
+        message:
+          "Turn on 'Return Intermediate Steps' on these agent nodes so Mibo can capture tool calls.",
+        nodes: agentsNeedingSteps,
+      });
+    }
+
+    if (payloadWarning) {
+      recommendations.push({
+        code: 'payload_size',
+        message: payloadWarning,
+      });
+    }
+
+    const traceInfo: IDataObject = {
+      sent: true,
+      traceId:
+        Object.entries(response?.headers || {}).find(
+          ([name]) => name.toLowerCase() === 'x-mibo-trace-id',
+        )?.[1] || 'unknown',
+      platformId: platformId || 'resolved-from-api-key',
+      requestId: requestId || null,
+      requestIdSource,
+      timestamp,
+      trace: {
+        spansSent: tracePayload.spans.length,
+        toolCallsSent: toolCalls.length,
+        payloadSize: payloadSizeFormatted,
+        nodes: redactedSources.map((source) => ({
+          name: source.nodeName,
+          status: source.status,
+          itemsCaptured: source.items.length,
+        })),
+      },
+      redaction: summary as unknown as IDataObject,
+      recommendations,
+      miboUrl: MIBO_APP_URL,
+    };
+
+    if (includeInputData) {
+      for (let i = 0; i < items.length; i++) {
         returnData.push({
           json: {
+            ...items[i].json,
             _miboTrace: traceInfo,
           },
-          pairedItem: aggregatePairedItems,
+          pairedItem: { item: i },
         });
       }
-    } catch (error: unknown) {
-      const errorMessage = parseErrorResponse(error);
-
-      if (this.continueOnFail()) {
-        const traceInfo: IDataObject = {
-          sent: false,
-          error: errorMessage,
-          platformId: platformId || 'unknown',
-          requestId: requestId || null,
-          requestIdSource,
-          timestamp,
-          payloadSize: payloadSizeFormatted,
-        };
-
-        if (includeInputData) {
-          for (let i = 0; i < items.length; i++) {
-            returnData.push({
-              json: {
-                ...items[i].json,
-                _miboTrace: traceInfo,
-              },
-              pairedItem: { item: i },
-            });
-          }
-        } else {
-          returnData.push({
-            json: {
-              _miboTrace: traceInfo,
-            },
-            pairedItem: aggregatePairedItems,
-          });
-        }
-      } else {
-        const isPayloadTooLarge = errorMessage.toLowerCase().includes('too large');
-        throw new NodeApiError(this.getNode(), error as JsonObject, {
-          message: `Failed to send trace to Mibo Testing: ${errorMessage}`,
-          description: isPayloadTooLarge
-            ? 'Try excluding nodes with large outputs (files, images, etc.) or reducing payload-heavy parameters.'
-            : 'Check your Mibo Testing API Key (the first field in the credentials). This is NOT the n8n API Key.',
-        });
-      }
+    } else {
+      returnData.push({
+        json: {
+          _miboTrace: traceInfo,
+        },
+        pairedItem: aggregatePairedItems,
+      });
     }
-
-    return [returnData];
+  } catch (error: unknown) {
+    const errorMessage = parseErrorResponse(error);
+    const isPayloadTooLarge = errorMessage.toLowerCase().includes('too large');
+    throw new NodeApiError(this.getNode(), error as JsonObject, {
+      message: `Failed to send trace to Mibo Testing: ${errorMessage}`,
+      description: isPayloadTooLarge
+        ? 'Try excluding nodes with large outputs (files, images, etc.) or reducing payload-heavy parameters.'
+        : 'Check your Mibo Testing API Key (the first field in the credentials). This is NOT the n8n API Key.',
+    });
   }
+
+  return [returnData];
 }

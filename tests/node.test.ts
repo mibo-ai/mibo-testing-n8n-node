@@ -691,7 +691,7 @@ describe('MiboTesting.execute', () => {
       const result = await node.execute.call(mock);
       const trace = result[0][0].json._miboTrace as IDataObject;
       expect(trace.sent).toBe(false);
-      expect(trace.error).toBe('Connection refused');
+      expect(trace.error).toContain('Connection refused');
     });
 
     it('returns only the failed trace summary by default', async () => {
@@ -710,8 +710,42 @@ describe('MiboTesting.execute', () => {
       expect(result[0][0].pairedItem).toEqual([{ item: 0 }, { item: 1 }]);
       expect(result[0][0].json._miboTrace).toMatchObject({
         sent: false,
-        error: 'Connection refused',
+        error: expect.stringContaining('Connection refused'),
       });
+    });
+
+    it('keeps the input items in the error output when Include Input Data is on', async () => {
+      mockSendTrace.mockRejectedValue({ message: 'Connection refused' });
+      const { mock } = createMockExecuteFunctions({
+        continueOnFail: true,
+        params: { options: { includeInputData: true } },
+        inputItems: [{ json: { customer: 'a' } }, { json: { customer: 'b' } }],
+      });
+      const result = await node.execute.call(mock);
+
+      expect(result[0]).toHaveLength(2);
+      expect(result[0].map((item) => item.json.customer)).toEqual(['a', 'b']);
+      expect(result[0][1].pairedItem).toEqual({ item: 1 });
+      expect(result[0][0].json._miboTrace).toMatchObject({ sent: false });
+    });
+
+    it('returns an error item under Continue for an empty API key', async () => {
+      const { mock } = createMockExecuteFunctions({
+        continueOnFail: true,
+        credentials: { apiKey: '', n8nApiKey: 'k', n8nBaseUrl: 'http://x/api/v1' },
+      });
+      const result = await node.execute.call(mock);
+      expect(result[0][0].json._miboTrace).toMatchObject({ sent: false });
+    });
+
+    it('returns an error item under Continue when the workflow cannot be resolved', async () => {
+      const { mock } = createMockExecuteFunctions({
+        continueOnFail: true,
+        credentials: { apiKey: 'k' },
+        inputItems: [{ json: {} }],
+      });
+      const result = await node.execute.call(mock);
+      expect(result[0][0].json._miboTrace).toMatchObject({ sent: false });
     });
   });
 });
