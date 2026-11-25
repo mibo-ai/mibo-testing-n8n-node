@@ -99,11 +99,18 @@ describe('parseErrorResponse', () => {
 
   it('maps AUTH_ERROR to an actionable message', () => {
     const error = {
-      response: { data: { error: { code: 'AUTH_ERROR', message: 'Internal server error during authentication' } } },
+      response: {
+        data: {
+          error: {
+            code: 'AUTH_ERROR',
+            message: 'Internal server error during authentication',
+          },
+        },
+      },
     };
     const result = parseErrorResponse(error);
     expect(result).toContain('Contact support');
-      });
+  });
 
   it('falls back to server message for unknown error code', () => {
     const error = {
