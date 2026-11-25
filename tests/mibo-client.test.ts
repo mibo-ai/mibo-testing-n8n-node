@@ -79,20 +79,31 @@ describe('parseErrorResponse', () => {
     expect(result).toContain('Details: data: is required');
   });
 
-  it('handles known error code without details', () => {
+  it('maps UNAUTHORIZED to an actionable message', () => {
     const error = {
-      response: {
-        data: {
-          error: {
-            code: 'INVALID_API_KEY',
-            message: 'Invalid key',
-          },
-        },
-      },
+      response: { data: { error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } } },
     };
     const result = parseErrorResponse(error);
-    expect(result).toContain('does not exist or has been revoked');
+    expect(result).toContain('Mibo rejected the API key');
+    expect(result).not.toContain('Unauthorized');
   });
+
+  it('maps API_KEY_EXPIRED to an actionable message', () => {
+    const error = {
+      response: { data: { error: { code: 'API_KEY_EXPIRED', message: 'API key expired' } } },
+    };
+    const result = parseErrorResponse(error);
+    expect(result).toContain('has expired');
+    expect(result).not.toContain('API key expired');
+  });
+
+  it('maps AUTH_ERROR to an actionable message', () => {
+    const error = {
+      response: { data: { error: { code: 'AUTH_ERROR', message: 'Internal server error during authentication' } } },
+    };
+    const result = parseErrorResponse(error);
+    expect(result).toContain('Contact support');
+      });
 
   it('falls back to server message for unknown error code', () => {
     const error = {

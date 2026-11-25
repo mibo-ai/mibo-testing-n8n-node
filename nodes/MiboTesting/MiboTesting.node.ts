@@ -272,7 +272,8 @@ async function runExecute(this: IExecuteFunctions): Promise<INodeExecutionData[]
   const credentials = await this.getCredentials('miboTestingApi');
   if (!String(credentials.apiKey ?? '').trim()) {
     throw new NodeOperationError(this.getNode(), 'Mibo Testing API key is empty', {
-      description: 'Set the API Key in the Mibo Testing credentials.',
+      description:
+        'Open the Mibo Testing credential and paste the API key from your Mibo workspace settings.',
     });
   }
   const workflowData = this.getWorkflow();

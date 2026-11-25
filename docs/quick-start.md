@@ -60,8 +60,9 @@ Fixes:
 
 ### API key issues
 
-> `The API key does not exist or has been revoked.`
-> `Missing x-api-key header.`
+> `Mibo rejected the API key.`
+> `The Mibo API key has expired.`
+> `Mibo Testing API key is empty`
 > `Could not determine the target agent.`
 
 The node uses two different API keys and they are easy to mix up:
@@ -71,7 +72,8 @@ The node uses two different API keys and they are easy to mix up:
 
 Fixes:
 
-- If you see "API key does not exist or has been revoked", you pasted the n8n key into the Mibo field (or the Mibo key was rotated). Re-paste the Mibo API key from the dashboard.
-- If you see "Missing x-api-key header", the credential field is empty — re-open the credential and save it again.
+- If you see "Mibo rejected the API key", the key does not exist or was revoked. You may have pasted the n8n key into the Mibo field, or the key was created before you verified your email. Create a new Mibo key and update the credential.
+- If you see "The Mibo API key has expired", create a new key in Mibo and update the credential.
+- If you see "Mibo Testing API key is empty", open the credential, paste the Mibo API key and save it.
 - If you see "Could not determine the target agent", either set **Agent ID** on the node, or scope the Mibo API key to a single agent in the dashboard.
 - If you see "The API key is restricted to specific agents", the **Agent ID** on the node is not one of the agents the key is allowed to use — update one of them so they match.
