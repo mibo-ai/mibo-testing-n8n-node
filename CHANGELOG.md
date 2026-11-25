@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/mibo-ai/mibo-testing-n8n-node/compare/n8n-nodes-mibo-testing-v2.0.1...n8n-nodes-mibo-testing-v2.0.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **node:** never break the workflow under Continue; actionable API key errors ([#15](https://github.com/mibo-ai/mibo-testing-n8n-node/issues/15)) ([95490f9](https://github.com/mibo-ai/mibo-testing-n8n-node/commit/95490f9d3aa6bfde45534ff1fe4e5eb7fc84615e))
+
 ## [2.0.1](https://github.com/mibo-ai/mibo-testing-n8n-node/compare/n8n-nodes-mibo-testing-v2.0.0...n8n-nodes-mibo-testing-v2.0.1) (2026-11-06)
 
 
